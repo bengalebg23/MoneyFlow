@@ -36,6 +36,10 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.4.0 — Year comparison now puts the years side by side (one column each,
+           chart-box height, shared £→px scale) with the labels listed
+           underneath each chart instead of on it. Items get one fixed colour
+           each across all years (7 biggest + highlighted; rest fold to Other).
   v1.3.0 — Tapping a flow now opens a full-screen visual comparison: one panel
            per year, each the size of the main chart, showing the tapped
            category flowing into its items (or income sources into the pot when
@@ -70,7 +74,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.3.0</title>
+<title>Money Flow v1.4.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -152,18 +156,27 @@
   .cmp-head{position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding:calc(12px + env(safe-area-inset-top,0px)) 18px 10px; background:var(--bg); border-bottom:1px solid var(--line);}
   .cmp-head h3{margin:0; font-size:26px; font-weight:400; line-height:1.1;}
   .cmp-sub{margin:2px 0 0; font-size:12px; color:var(--paper-dim);}
-  .cmp-body{max-width:1180px; margin:0 auto; padding:14px 18px calc(28px + env(safe-area-inset-bottom,0px)); display:grid; gap:14px;}
-  .panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 0 4px; display:grid; gap:4px; scroll-margin-top:90px;}
-  .panel.me{border-color:var(--mustard); box-shadow:0 0 0 1px var(--mustard);}
-  .p-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; padding:0 12px;}
-  .p-yr{font-size:17px; font-weight:600; margin-right:8px;}
-  .p-tag{font-size:11px; color:var(--muted); margin-right:6px;}
-  .p-tag.now{color:#fff; background:var(--mustard); padding:1px 6px; border-radius:5px; font-weight:600;}
-  .p-amt{font-size:15px; font-weight:600;} .p-amt small{font-size:11px; color:var(--muted); font-weight:500;}
-  .p-delta{padding:0 12px; font-size:12px; color:var(--paper-dim);}
-  .p-delta .good{color:var(--today); font-weight:600;} .p-delta .bad{color:var(--c-gap); font-weight:600;}
-  .p-svg{display:block;}
-  .p-none{margin:4px 12px 8px; font-size:13px; color:var(--muted);}
+  .cmp-body{max-width:1180px; margin:0 auto; padding:12px 10px calc(28px + env(safe-area-inset-bottom,0px)); display:grid; gap:14px;}
+  .cmp-grid{display:grid; column-gap:6px; grid-template-rows:auto auto;}
+  .col{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:8px 6px; display:grid; grid-row:span 2; grid-template-rows:subgrid; row-gap:8px; min-width:0;}
+  .c-body{display:grid; gap:8px; align-content:start; min-width:0;}
+  .col.me{border-color:var(--mustard); box-shadow:0 0 0 1px var(--mustard);}
+  .c-head{display:grid; gap:1px; min-width:0;}
+  .c-yr{font-size:16px; font-weight:600;}
+  .c-now{justify-self:start; font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--mustard); padding:1px 5px; border-radius:4px; font-weight:700;}
+  .c-sub{font-size:10.5px; color:var(--muted);}
+  .c-amt{font-size:14px; font-weight:600;}
+  .c-delta{font-size:10.5px; color:var(--paper-dim); min-height:1.3em;}
+  .c-delta .good{color:var(--today); font-weight:600;} .c-delta .bad{color:var(--c-gap); font-weight:600;}
+  .c-svg{display:block; width:100%;}
+  .c-empty{padding:20px 0; font-size:11px; color:var(--muted); text-align:center;}
+  .c-list{list-style:none; margin:0; padding:0; display:grid; gap:4px;}
+  .c-list li{display:grid; grid-template-columns:8px minmax(0,1fr); column-gap:5px; font-size:11px; line-height:1.25;}
+  .c-list li i{width:8px; height:8px; border-radius:2px; margin-top:3px; grid-row:span 2;}
+  .c-list .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .c-list .am{font-size:10px; color:var(--paper-dim);}
+  .c-list li.hl .nm, .c-list li.hl .am{font-weight:700; color:var(--paper);}
+  .c-list li.none{display:block; color:var(--muted); font-size:10.5px;}
   .scrim{position:fixed; inset:0; background:rgba(38,49,63,.35); z-index:50;}
   .sheet{position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:min(560px,100%); max-height:82vh; overflow:auto; background:var(--surface); border-radius:18px 18px 0 0; padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px)); z-index:51; box-shadow:0 -8px 30px rgba(38,49,63,.18); display:grid; gap:12px;}
   .sheet-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
@@ -254,7 +267,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
@@ -561,74 +574,77 @@ function partsIn(ref, d){
   if(ref.t==='hub'){ const p = Object.entries(d.income).filter(([,v])=>v>0); const gp = valueIn({t:'gap'}, d); if(gp>0) p.push(['Drawn from balance', gp]); return p; }
   return [];
 }
+const ITEM_COLORS = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#4a3aa7']; // fixed order, never cycled
 function openCompare(n, year){
   let ref = n.ref || {}, hl = null;
   if(ref.t==='item'){ hl = ref.item; ref = {t:'cat', cat:ref.cat}; }
-  else if(ref.t==='other'){ hl = 'Other'; ref = {t:'cat', cat:ref.cat}; }
+  else if(ref.t==='other'){ ref = {t:'cat', cat:ref.cat}; }
   const title = ref.t==='cat' ? ref.cat : n.name;
-  const color = ref.t==='cat' ? famColor(CATS[ref.cat]||'home') : (n.color || css('--c-in'));
+  const focusColor = ref.t==='cat' ? famColor(CATS[ref.cat]||'home') : (n.color || css('--c-in'));
   const isIncome = ref.t==='in' || ref.t==='hub' || ref.t==='left';
   const yrs = Object.keys(DATA.years).sort();
-  const box = document.getElementById('chartBox');
-  const PW = box.clientWidth, PH = box.clientHeight;
+  const PH = document.getElementById('chartBox').clientHeight;
 
-  const rows = yrs.map(y => {
+  let rows = yrs.map(y => {
     const D = DATA.years[y], f = 12 / D.months;
-    let parts = partsIn(ref, D).map(([k,v]) => ({k, v, a:v*f}));
+    const parts = partsIn(ref, D).map(([k,v]) => ({k, v, a:v*f}));
     let focus = valueIn(ref, D);
     if(ref.t==='hub') focus = parts.reduce((s,p)=>s+p.v,0);
-    if(ref.t==='cat' && hl==='Other'){ // "Other" is this year's small items: show them as one block each year
-      const main = new Set(chartItems(DATA.years[year], ref.cat));
-      const big = parts.filter(p=>main.has(p.k)), rest = parts.filter(p=>!main.has(p.k));
-      parts = big; if(rest.length){ const v = rest.reduce((s,p)=>s+p.v,0); parts.push({k:'Other', v, a:v*f}); }
-    }
     return {y, D, f, focus, fa: focus==null ? null : focus*f, parts};
   });
-  // one item order for every year, led by the year you tapped from
-  const order = []; const add = k => { if(!order.includes(k)) order.push(k); };
-  [rows.find(r=>r.y===year), ...rows].forEach(r => r && [...r.parts].sort((a,b)=>b.a-a.a).forEach(p=>add(p.k)));
-  rows.forEach(r => r.parts.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k)));
+  // Items get one colour each, the same in every year. The 7 biggest (over all years, plus any
+  // highlighted item) get their own colour; the rest are folded into "Other".
+  const sizes = {}; rows.forEach(r => r.parts.forEach(p => sizes[p.k] = (sizes[p.k]||0) + p.a));
+  let keys = Object.keys(sizes).sort((a,b)=>sizes[b]-sizes[a]);
+  let named = keys.slice(0, keys.length > 7 ? 6 : 7);
+  if(hl && keys.includes(hl) && !named.includes(hl)) named = [...named.slice(0, named.length-1), hl];
+  const color = {}; named.forEach((k,i) => color[k] = ITEM_COLORS[i]); color['Other'] = css('--c-in');
+  const order = [...named, 'Other'];
+  rows.forEach(r => {
+    const keep = r.parts.filter(p => named.includes(p.k)), rest = r.parts.filter(p => !named.includes(p.k));
+    if(rest.length){ const v = rest.reduce((s,p)=>s+p.v,0); keep.push({k:'Other', v, a:v*r.f, n:rest.length}); }
+    r.parts = keep.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
+  });
 
   const sel = rows.find(r=>r.y===year);
-  const maxA = Math.max(...rows.map(r=>r.fa||0), 1);
+  const maxA = Math.max(...rows.map(r=>Math.max(r.fa||0, r.parts.reduce((s,p)=>s+p.a,0))), 1);
   const maxParts = Math.max(...rows.map(r=>r.parts.length), 0);
-  const GAP = 5, TOP = 14, BOT = 14;
-  const s = (PH - TOP - BOT - Math.max(0,maxParts-1)*GAP) / maxA;   // £ → px, shared by every panel
+  const GAP = 3, TOP = 6, BOT = 6;
+  const s = (PH - TOP - BOT - Math.max(0,maxParts-1)*GAP) / maxA;   // £ → px, shared by every year
 
-  let html = '';
+  let html = `<div class="cmp-grid" style="grid-template-columns:repeat(${rows.length},minmax(0,1fr))">`;
   for(const r of rows){
-    const me = r.y===year, part = r.D.months < 12;
+    const me = r.y===year, part = r.D.months < 12, ap = r.f !== 1 ? '≈' : '';
     let delta = '';
     if(!me && sel && sel.fa!=null && r.fa){
       const diff = sel.fa - r.fa, pct = diff/r.fa*100, good = isIncome ? diff>=0 : diff<=0;
-      delta = Math.abs(diff) < 1 ? `same as ${year}` :
-        `<span class="${good?'good':'bad'}">${year} is ${diff>0?'▲':'▼'} ${gbp(Math.abs(diff))}/yr (${diff>0?'+':'−'}${Math.abs(pct).toFixed(0)}%) vs this</span>`;
+      delta = Math.abs(diff) < 1 ? `Same as ${year}` : `<span class="${good?'good':'bad'}">${year}: ${diff>0?'▲':'▼'}${gbp(Math.abs(diff))} (${diff>0?'+':'−'}${Math.abs(pct).toFixed(0)}%)</span>`;
     }
-    html += `<section class="panel${me?' me':''}">
-      <div class="p-head"><div><span class="p-yr mono">${r.y}</span>${part?`<span class="p-tag">Jan–${MON[r.D.months-1]} · shown ×${(12/r.D.months).toFixed(r.D.months%12?1:0)} as a full year</span>`:''}${me?'<span class="p-tag now">viewing</span>':''}</div>
-        <div class="p-amt mono">${r.focus==null||!r.focus?'—':gbp(r.focus)}${part&&r.focus?` <small>→ ≈${gbp(r.fa)}/yr</small>`:''}</div></div>
-      ${delta?`<div class="p-delta">${delta}</div>`:''}
-      ${r.focus && ref.t==='cat' && !r.parts.length && rows.some(q=>q.parts.length) ? `<div class="p-delta">Not split into items in ${r.y}</div>` : ''}
-      ${r.focus ? `<svg class="p-svg" data-y="${r.y}" width="${PW}" height="${Math.max(60, Math.min(PH, (Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0)))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT))}"></svg>` : `<p class="p-none">Nothing ${ref.t==='cat'?'in this category':''} in ${r.y}${r.focus===null && ref.t==='cat'?' (not tracked this year)':''}.</p>`}
+    html += `<section class="col${me?' me':''}">
+      <div class="c-head"><span class="c-yr mono">${r.y}</span>${me?'<span class="c-now">viewing</span>':''}
+        <span class="c-sub">${part?`Jan–${MON[r.D.months-1]} ×${+(12/r.D.months).toFixed(1)}`:'Full year'}</span>
+        <span class="c-amt mono">${r.focus ? ap+gbp(r.fa) : '—'}</span>
+        ${part && r.focus ? `<span class="c-sub">${gbp(r.focus)} so far</span>` : ''}
+        <span class="c-delta">${delta || '&nbsp;'}</span></div>
+      <div class="c-body">
+      ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${r.y}</div>`}
+      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}"><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${ap}${gbp(p.a)}</span></li>`).join('')
+        || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
+      </div>
     </section>`;
   }
+  html += `</div>`;
   document.getElementById('cmpTitle').textContent = title;
-  document.getElementById('cmpSub').textContent = (hl ? `${hl} highlighted · ` : '') + 'every year drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ', part years pro-rated to a full year' : '');
+  document.getElementById('cmpSub').textContent = (hl ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years pro-rated to a full year (≈)' : '');
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
-  const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; // visible first so text can be measured
-  rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, color, hl, side: ref.t==='hub' ? 'left' : 'right', title}); });
-  const meEl = body.querySelector('.panel.me'); if(meEl) meEl.scrollIntoView({block:'start'});
+  const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
+  rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right'}); });
   document.getElementById('cmpX').focus({preventScroll:true});
 }
-function chartItems(d, cat){ // the items the main chart shows for a category (the rest go into "Other")
-  const v = d.out[cat]; if(!v || typeof v!=='object') return [];
-  const tot = total(v); return Object.entries(v).sort((a,b)=>b[1]-a[1]).filter(([,x])=>x>0 && x/tot>=0.03).slice(0,8).map(([k])=>k);
-}
 function drawPanel(el, r, o){
-  const svg = d3.select(el), W = +el.getAttribute('width'), H = +el.getAttribute('height'), nw = 10;
-  const approx = r.f !== 1 ? '≈' : '';
-  const fx = o.side==='right' ? 0 : W - nw;         // focus bar x
-  const px = o.side==='right' ? W - nw : 0;         // parts bar x
+  const W = el.clientWidth || el.parentNode.clientWidth, nw = 8;
+  const svg = d3.select(el).attr('width', W).attr('viewBox', `0 0 ${W} ${el.getAttribute('height')}`);
+  const fx = o.side==='right' ? 0 : W - nw, px = o.side==='right' ? W - nw : 0;
   const fh = r.fa * o.s, fy = o.TOP;
   let y = o.TOP, cum = fy;
   const parts = r.parts.map(p => { const h = Math.max(1, p.a*o.s); const it = {...p, y0:y, y1:y+h, sy0:cum, sy1:cum+h}; y += h + o.GAP; cum += h; return it; });
@@ -638,29 +654,10 @@ function drawPanel(el, r, o){
     .attr('d', p => o.side==='right'
       ? link({source:{x1:fx+nw}, target:{x0:px}, y0:(p.sy0+p.sy1)/2, y1:(p.y0+p.y1)/2})
       : link({source:{x1:px+nw}, target:{x0:fx}, y0:(p.y0+p.y1)/2, y1:(p.sy0+p.sy1)/2}))
-    .attr('stroke', o.color).attr('stroke-width', p=>p.y1-p.y0).attr('stroke-opacity', p=>dim(p.k)?.12:.42);
-  svg.append('rect').attr('x',fx).attr('y',fy).attr('width',nw).attr('height',Math.max(1,fh)).attr('rx',2).attr('fill',o.color);
+    .attr('stroke', p=>o.color[p.k]).attr('stroke-width', p=>p.y1-p.y0).attr('stroke-opacity', p=>dim(p.k)?.12:.45);
+  svg.append('rect').attr('x',fx).attr('y',fy).attr('width',nw).attr('height',Math.max(1,fh)).attr('rx',2).attr('fill',o.focusColor);
   svg.append('g').selectAll('rect').data(parts).join('rect').attr('x',px).attr('y',p=>p.y0).attr('width',nw).attr('height',p=>p.y1-p.y0).attr('rx',2)
-    .attr('fill', o.color).attr('fill-opacity', p=>dim(p.k)?.3:1);
-  // labels: same boxed tags as the main chart; highlighted item first, then biggest first
-  const gl = svg.append('g');
-  const labs = [{k:o.title, a:r.fa, cx: o.side==='right' ? fx+nw+6 : fx-6, cy:fy+fh/2, anchor: o.side==='right'?'start':'end', big:true, pri:1e12}]
-    .concat(parts.map(p => ({k:p.k, a:p.a, cx: o.side==='right' ? px-6 : px+nw+6, cy:(p.y0+p.y1)/2, anchor: o.side==='right'?'end':'start', pri: p.k===o.hl ? 1e11 : p.a})));
-  const taken = [];
-  labs.sort((a,b)=>b.pri-a.pri).forEach(L => {
-    const g = gl.append('g').attr('class','lab boxed');
-    const bg = g.append('rect').attr('class','lab-bg').attr('rx',5);
-    const t = g.append('text').attr('class','nlabel'+(L.big?' big':'')).attr('text-anchor',L.anchor);
-    if(L.big){ t.append('tspan').attr('x',0).attr('dy','-0.15em').text(L.k); t.append('tspan').attr('class','amt').attr('x',0).attr('dy','1.2em').text(approx+gbp(L.a)); }
-    else { t.attr('dy','0.35em'); t.append('tspan').text(L.k+' '); t.append('tspan').attr('class','amt').text(approx+gbp(L.a)); }
-    const bb = t.node().getBBox();
-    bg.attr('x',bb.x-4).attr('y',bb.y-2).attr('width',bb.width+8).attr('height',bb.height+4);
-    const box = {l:L.cx+bb.x-4, r:L.cx+bb.x+bb.width+4, t:L.cy+bb.y-2, b:L.cy+bb.y+bb.height+2};
-    const clash = taken.some(q => box.t < q.b+2 && box.b > q.t-2 && box.l < q.r+2 && box.r > q.l-2);
-    if(clash){ g.remove(); return; }
-    taken.push(box); g.attr('transform',`translate(${L.cx},${L.cy})`);
-    if(o.hl && L.k===o.hl) bg.attr('stroke', o.color).attr('stroke-width', 1.5);
-  });
+    .attr('fill', p=>o.color[p.k]).attr('fill-opacity', p=>dim(p.k)?.3:1);
 }
 function closeCompare(){ document.getElementById('cmp').hidden = true; document.body.style.overflow = ''; }
 document.getElementById('cmpX').onclick = closeCompare;
