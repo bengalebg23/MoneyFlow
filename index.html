@@ -36,6 +36,12 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.2.0 — Whole chart (all four columns, items included) is laid out on a
+           canvas ~2.3× the phone width with natural proportions and opens zoomed
+           out to fit it all (k0), like the SankeyMATIC original. Every label is a
+           small boxed tag at a fixed screen size; biggest flows claim space
+           first, so item labels appear as you zoom in. Smaller text (10.5/11px,
+           amounts 9.5px). Removed the DETAIL_K show/hide threshold.
   v1.1.0 — Chart is now pinch/scroll zoomable and draggable (d3.zoom), with
            +/−/reset buttons. The item column is always laid out but only
            shown once zoom ≥ DETAIL_K (1.7); labels keep a fixed screen size and
@@ -57,7 +63,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.1.0</title>
+<title>Money Flow v1.2.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -115,9 +121,9 @@
   .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 0; position:relative;}
   .scroller{overflow-x:auto; -webkit-overflow-scrolling:touch;}
   svg{display:block;}
-  .nlabel{font-size:12.5px; fill:var(--paper); font-family:'Inter',sans-serif;}
-  .nlabel .amt{fill:var(--paper-dim); font-family:'IBM Plex Mono',monospace; font-size:11.5px;}
-  .nlabel.big{font-weight:600; font-size:13.5px;}
+  .nlabel{font-size:10.5px; fill:var(--paper); font-family:'Inter',sans-serif;}
+  .nlabel .amt{fill:var(--paper-dim); font-family:'IBM Plex Mono',monospace; font-size:9.5px;}
+  .nlabel.big{font-weight:600; font-size:11px;}
   .link{fill:none; stroke-opacity:.38; transition:stroke-opacity .15s;}
   .link:hover{stroke-opacity:.72;}
   .legend{display:flex; flex-wrap:wrap; gap:6px 14px; padding:6px 14px 0; font-size:12px; color:var(--paper-dim);}
@@ -131,8 +137,6 @@
   .chart-box{position:relative; height:min(72vh, 620px); min-height:380px; overflow:hidden; touch-action:none; cursor:grab;}
   .chart-box:active{cursor:grabbing;}
   .chart-box svg{width:100%; height:100%; user-select:none; -webkit-user-select:none;}
-  .link.item, .nrect.item{opacity:0; pointer-events:none; transition:opacity .25s;}
-  svg.detail .link.item, svg.detail .nrect.item{opacity:1; pointer-events:auto;}
   .nrect{cursor:pointer;} .link{cursor:pointer;}
   .lab-bg{fill:var(--surface); fill-opacity:.9; stroke:var(--line);}
   .zbtns{position:absolute; top:8px; right:8px; display:flex; flex-direction:column; gap:4px;}
@@ -222,7 +226,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
@@ -386,8 +390,6 @@ document.getElementById('resetBtn').onclick = () => {
 let tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,3200); }
 
 // ── sankey ──
-// Always laid out with the item column; items only show once zoomed past DETAIL_K.
-const DETAIL_K = 1.7;
 function build(d){
   const nodes = [], links = [], idx = {};
   const node = (key, color, col, ref) => { if(!(key in idx)){ idx[key]=nodes.length; nodes.push({key,name:clean(key),color,col,ref}); } return idx[key]; };
@@ -425,13 +427,18 @@ function drawChart(d, year){
   const box = document.getElementById('chartBox');
   const VW = box.clientWidth, VH = box.clientHeight;
   const g = build(d);
-  const ml = Math.min(120, VW*0.28), mr = 10, nw = 8;
-  const graph = d3.sankey().nodeWidth(nw).nodePadding(5).nodeAlign(n=>n.col).nodeSort(null)
-    .extent([[ml, 12],[VW - mr, VH - 12]])
+  // Lay the whole chart (all four columns) out on a canvas wider than a phone so it keeps
+  // natural proportions, then open zoomed out to fit it all (k0). Labels stay a fixed small
+  // size on screen and only show where there's room, so item labels appear as you zoom in.
+  const LW = Math.max(860, VW < 700 ? VW*2.3 : VW*1.25);
+  const LH = LW * Math.min(Math.max(VH/VW*0.75, 0.55), 1.3);
+  const k0 = Math.min(VW/LW, VH/LH);
+  const nw = 10;
+  const graph = d3.sankey().nodeWidth(nw).nodePadding(8).nodeAlign(n=>n.col).nodeSort(null)
+    .extent([[0, 0],[LW, LH]])
     ({nodes:g.nodes.map(n=>({...n})), links:g.links.map(l=>({...l}))});
-  // pin the item column to the right edge (the zoom buttons zoom towards it) to the right edge so the overview uses the width for categories
-  const span = VW - ml - mr, fx = [0, .25, .47, 1];
-  graph.nodes.forEach(n=>{ const x = n.col===3 ? VW - mr - nw : ml + fx[n.col]*span; n.x0 = x; n.x1 = x + nw; });
+  const fx = [0, .3, .62, 1];
+  graph.nodes.forEach(n=>{ const x = fx[n.col]*(LW - nw); n.x0 = x; n.x1 = x + nw; });
 
   const svg = d3.select('#sankey').attr('width',VW).attr('height',VH).attr('viewBox',`0 0 ${VW} ${VH}`);
   svg.selectAll('*').remove();
@@ -454,11 +461,11 @@ function drawChart(d, year){
   let detailOn = null, labels = [];
   function buildLabels(detail){
     gl.selectAll('*').remove();
-    labels = graph.nodes.filter(n => detail || n.col < 3).map(n => {
+    labels = graph.nodes.map(n => {
       // items sit at the right edge, so their labels go on the left of the bar, boxed over the flows
-      const mode = n.col===0 || n.col===3 ? 'left' : n.col===1 || (n.col===2 && detail) ? 'center' : 'right';
+      const mode = n.col===0 ? 'right' : n.col===3 ? 'left' : 'center';
       const two = n.col < 3;
-      const boxed = mode==='center' || n.col===3;
+      const boxed = true;
       const el = gl.append('g').attr('class','lab'+(boxed?' boxed':'')).style('pointer-events','none');
       const bg = boxed ? el.append('rect').attr('class','lab-bg').attr('rx',5) : null;
       const t = el.append('text').attr('class','nlabel'+(n.col<=2?' big':'')).attr('text-anchor', mode==='left'?'end':mode==='center'?'middle':'start');
@@ -471,47 +478,42 @@ function drawChart(d, year){
         t.append('tspan').attr('class','amt').text(gbp(n.value));
       }
       const bb = t.node().getBBox();
-      if(bg) bg.attr('x',bb.x-6).attr('y',bb.y-3).attr('width',bb.width+12).attr('height',bb.height+6);
-      return {n, el, mode, top:bb.y-3, bot:bb.y+bb.height+3};
+      if(bg) bg.attr('x',bb.x-4).attr('y',bb.y-2).attr('width',bb.width+8).attr('height',bb.height+4);
+      return {n, el, mode, top:bb.y-2, bot:bb.y+bb.height+2, l:bb.x-4, r:bb.x+bb.width+4};
     });
   }
   function place(t){
-    const detail = t.k >= DETAIL_K;
-    if(detail !== detailOn){ detailOn = detail; svg.classed('detail', detail); buildLabels(detail); }
-    const taken = {};
+    if(detailOn === null){ detailOn = true; buildLabels(true); }
+    const taken = []; // screen boxes already claimed, across all columns
     // biggest flows claim label space first; smaller ones appear as you zoom in
     [...labels].sort((a,b)=>b.n.value-a.n.value).forEach(L=>{
       const n = L.n;
       const cx = L.mode==='left' ? t.applyX(n.x0)-6 : L.mode==='center' ? t.applyX((n.x0+n.x1)/2) : t.applyX(n.x1)+6;
       let cy = t.applyY((n.y0+n.y1)/2);
-      if(n.col===1) cy = Math.min(Math.max(cy, t.applyY(n.y0)+24), t.applyY(n.y1)-24, VH-24); // keep hub label on screen
-      const top = cy + L.top, bot = cy + L.bot;
-      const col = (taken[n.col] = taken[n.col] || []);
-      const off = bot < 0 || top > VH;
-      const clash = col.some(([a,b]) => top < b + 2 && bot > a - 2);
+      if(n.col===1) cy = Math.min(Math.max(cy, t.applyY(n.y0)+14, 18), t.applyY(n.y1)-14, VH-18); // keep hub label on screen
+      const top = cy + L.top, bot = cy + L.bot, lx = cx + L.l, rx = cx + L.r;
+      const off = bot < 0 || top > VH || rx < 0 || lx > VW;
+      const clash = taken.some(b => top < b.bot + 2 && bot > b.top - 2 && lx < b.rx + 2 && rx > b.lx - 2);
       const show = !off && !clash;
-      if(show) col.push([top,bot]);
+      if(show) taken.push({top, bot, lx, rx});
       L.el.attr('transform',`translate(${cx},${cy})`).style('display', show ? null : 'none');
     });
   }
 
-  const zoom = d3.zoom().scaleExtent([1, 10]).clickDistance(6)
-    .translateExtent([[-ml*0.2, -20],[VW + 20, VH + 20]])
-    .on('zoom', ev => { gz.attr('transform', ev.transform); place(ev.transform); hint(ev.transform.k); });
+  const home = d3.zoomIdentity.translate((VW - LW*k0)/2, (VH - LH*k0)/2).scale(k0);
+  const pad = 40;
+  const zoom = d3.zoom().scaleExtent([k0*0.8, k0*16]).clickDistance(6)
+    .translateExtent([[-pad, -pad],[LW + pad, LH + pad]])
+    .on('zoom', ev => { gz.attr('transform', ev.transform); place(ev.transform); });
   svg.call(zoom).on('dblclick.zoom', null);
-  place(d3.zoomIdentity); hint(1);
-  chart = {svg, zoom};
+  svg.call(zoom.transform, home);
+  chart = {svg, zoom, home};
 }
-function hint(k){
-  document.getElementById('zoomHint').textContent = k >= DETAIL_K ? 'Showing items · tap anything to compare years' : 'Pinch or scroll to zoom in for items · tap anything to compare years';
-}
-function zoomBy(f){ // zoom towards the category/item side, where the detail is
-  if(!chart) return; const el = chart.svg.node();
-  chart.svg.transition().duration(250).call(chart.zoom.scaleBy, f, [el.clientWidth - 14, el.clientHeight/2]);
-}
+document.getElementById('zoomHint').textContent = 'Pinch or scroll to zoom · more labels appear as you zoom in · tap anything to compare years';
+function zoomBy(f){ if(chart) chart.svg.transition().duration(250).call(chart.zoom.scaleBy, f); }
 document.getElementById('zIn').onclick = () => zoomBy(1.6);
 document.getElementById('zOut').onclick = () => zoomBy(1/1.6);
-document.getElementById('zReset').onclick = () => { if(chart) chart.svg.transition().duration(250).call(chart.zoom.transform, d3.zoomIdentity); };
+document.getElementById('zReset').onclick = () => { if(chart) chart.svg.transition().duration(250).call(chart.zoom.transform, chart.home); };
 
 // ── year comparison pop-up ──
 function valueIn(ref, d){
