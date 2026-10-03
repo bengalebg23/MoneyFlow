@@ -393,6 +393,11 @@ function parseSantander(A){
       if(lab==='LNS') break;
       if(isLabel(r[0]) && !lab){ section = c0; if(SECTION[c0] && !(SECTION[c0] in catTotal)) catTotal[SECTION[c0]] = Math.round(val(r)); continue; }
       if(!lab) continue;
+      if(section==='income' && /^(total\b|special\b)/i.test(lab)){ // subtotal rows (Total, Total (normal), special income…) are not income sources
+        if(/^total$/i.test(lab) && useAnnual && (lastPerson==='Ben'||lastPerson==='Emily')) inc[lastPerson] = Math.round(val(r));
+        if(/^total$/i.test(lab)) lastPerson = '';
+        continue;
+      }
       if(/^total$/i.test(lab)){
         // older years only keep an annual figure on each person's Total row
         if(useAnnual && section==='income' && (lastPerson==='Ben'||lastPerson==='Emily')) inc[lastPerson] = Math.round(val(r));
@@ -401,6 +406,7 @@ function parseSantander(A){
       const v = Math.round(val(r));
       if(section==='income'){
         if(lab==='Ben'||lab==='Emily'){ inc[lab] += v; lastPerson = lab; }
+        else if(/^(ben|emily) capex$/i.test(lab)){ const who = lab.split(' ')[0]; const k = who[0].toUpperCase()+who.slice(1).toLowerCase()+' (one-off)'; if(v>0) inc[k] = (inc[k]||0) + v; }
         else if(lab==='Gov') inc["Child Benefit"] += v; else inc["Other income"] += v;
       } else if(section==='Baseline'){
         if(BASE[lab] && v>0) out[BASE[lab]] = v;
