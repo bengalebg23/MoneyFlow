@@ -36,6 +36,14 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.5.0 — One-off vs ongoing logic (isOneOff). Part years only pro-rate ongoing
+           costs; one-off costs show as spent so far. One-off = category in
+           ONE_OFF_CATS (Holidays, Home projects, Parties & weddings, Annual
+           payments), a seasonal item in ONE_OFF_ITEMS (Christmas, birthdays…),
+           or a lumpy spending pattern: with ≥4 months of data, spend landed in
+           ≤ max(1, months/4) months or ≥60% of it in one month. The parser
+           stores those as years[y].lumpy; BUILTIN_DATA carries the same flags
+           worked out from the 2025/2026 monthly columns.
   v1.4.0 — Year comparison now puts the years side by side (one column each,
            chart-box height, shared £→px scale) with the labels listed
            underneath each chart instead of on it. Items get one fixed colour
@@ -74,7 +82,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.4.0</title>
+<title>Money Flow v1.5.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -267,7 +275,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
@@ -320,7 +328,10 @@ const BUILTIN_DATA = {
    "Home projects":{"Driveway":11761,"Decorating":195},
    "Holidays":{"Algarve":1766,"Holland":1346,"Devon camping":1317,"Ironbridge":326},
    "Annual payments":{"Amazon Prime":95}
-  }, note:"The April one-off from Emily covered the driveway."}
+  },
+  // from the monthly columns: spend that landed in one or two months (see isOneOff)
+  lumpy:{"Everyday spending›Christmas":true,"Everyday spending›Reuben":true,"Everyday spending›Vivien":true,"Everyday spending›Cash":true},
+  note:"The April one-off from Emily covered the driveway."}
  }
 };
 
@@ -370,6 +381,7 @@ function parseSantander(A){
     const inc = {"Ben":0,"Emily":0,"Child Benefit":0,"Other income":0}, out = {};
     let section = '', lastPerson = '';
     const catTotal = {}; // annual-mode check totals per category
+    const lumpy = {};    // items whose spend lands in one or two months (see isOneOff)
     const BASE_CAT = {"Food":"Food shop","variable":"Everyday spending","Bills":"Bills & subs","Savings":"Kids' savings"};
     for(let i=hr+1;i<A.length;i++){
       const r = A[i]; if(!r) continue;
@@ -392,6 +404,11 @@ function parseSantander(A){
       } else if(SECTION[section] && v>0 && lab!=='CAPEX'){
         const cat = SECTION[section], name = ALIAS[lab] || lab.replace(/\s+/g,' ');
         out[cat] = out[cat] || {}; out[cat][name] = (out[cat][name]||0) + v;
+        if(!useAnnual && filled >= 4){
+          const ms = []; for(let k=0;k<12;k++){ const x = num(r[b+k]); if(x>0) ms.push(x); }
+          const tot = ms.reduce((a,c)=>a+c,0);
+          if(tot>0 && (ms.length <= Math.max(1, Math.floor(filled/4)) || Math.max(...ms)/tot >= 0.6)) lumpy[cat+'›'+name] = true;
+        }
       }
     }
     if(useAnnual){ // older sheets mix monthly averages into item rows: trust the category total when items don't add up
@@ -403,7 +420,7 @@ function parseSantander(A){
     }
     for(const k of Object.keys(inc)) if(inc[k] <= 0) delete inc[k];
     if(!out.Mortgage && !Object.keys(inc).length) continue;
-    years[y] = {months: useAnnual ? 12 : Math.max(lastM,1), income:inc, out, note:''};
+    years[y] = {months: useAnnual ? 12 : Math.max(lastM,1), income:inc, out, lumpy, note:''};
   }
   if(!Object.keys(years).length) throw new Error('No year blocks with figures were found.');
   return years;
@@ -574,6 +591,19 @@ function partsIn(ref, d){
   if(ref.t==='hub'){ const p = Object.entries(d.income).filter(([,v])=>v>0); const gp = valueIn({t:'gap'}, d); if(gp>0) p.push(['Drawn from balance', gp]); return p; }
   return [];
 }
+// One-off vs ongoing. Part years only pro-rate ongoing costs (ASDA, bills…); one-off costs
+// (holidays, home projects…) are shown as actually spent so far. A cost is one-off if its
+// category is lumpy by nature, it's a known seasonal item, or its spending pattern says so
+// (most of the year's spend landed in one or two months — the parser's "lumpy" check).
+const ONE_OFF_CATS = new Set(['Holidays','Home projects','Parties & weddings','Annual payments']);
+const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'Emily (one-off, April)']);
+function isOneOff(D, cat, item){
+  if(ONE_OFF_CATS.has(cat)) return true;
+  if(item && ONE_OFF_ITEMS.has(item)) return true;
+  return !!(D.lumpy && D.lumpy[cat+'›'+(item||'')]);
+}
+const proFactor = (D, cat, item) => D.months >= 12 || isOneOff(D, cat, item) ? 1 : 12 / D.months;
+
 const ITEM_COLORS = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#4a3aa7']; // fixed order, never cycled
 function openCompare(n, year){
   let ref = n.ref || {}, hl = null;
@@ -585,12 +615,18 @@ function openCompare(n, year){
   const yrs = Object.keys(DATA.years).sort();
   const PH = document.getElementById('chartBox').clientHeight;
 
+  const catKey = ref.t==='cat' ? ref.cat : 'income';
   let rows = yrs.map(y => {
-    const D = DATA.years[y], f = 12 / D.months;
-    const parts = partsIn(ref, D).map(([k,v]) => ({k, v, a:v*f}));
-    let focus = valueIn(ref, D);
+    const D = DATA.years[y];
+    const parts = partsIn(ref, D).map(([k,v]) => { const f = proFactor(D, catKey, k); return {k, v, a:v*f, pro:f>1}; });
+    let focus = valueIn(ref, D), fa = null, pro = false;
     if(ref.t==='hub') focus = parts.reduce((s,p)=>s+p.v,0);
-    return {y, D, f, focus, fa: focus==null ? null : focus*f, parts};
+    if(focus != null){
+      if(parts.length){ fa = parts.reduce((s,p)=>s+p.a,0); pro = parts.some(p=>p.pro); }
+      else { const f = proFactor(D, catKey, ref.t==='in' ? ref.name : null); fa = focus*f; pro = f>1; }
+    }
+    const anyOne = parts.length ? parts.some(p=>!p.pro) : !pro;
+    return {y, D, focus, fa, pro, anyOne, parts};
   });
   // Items get one colour each, the same in every year. The 7 biggest (over all years, plus any
   // highlighted item) get their own colour; the rest are folded into "Other".
@@ -602,7 +638,7 @@ function openCompare(n, year){
   const order = [...named, 'Other'];
   rows.forEach(r => {
     const keep = r.parts.filter(p => named.includes(p.k)), rest = r.parts.filter(p => !named.includes(p.k));
-    if(rest.length){ const v = rest.reduce((s,p)=>s+p.v,0); keep.push({k:'Other', v, a:v*r.f, n:rest.length}); }
+    if(rest.length) keep.push({k:'Other', v:rest.reduce((s,p)=>s+p.v,0), a:rest.reduce((s,p)=>s+p.a,0), pro:rest.some(p=>p.pro), n:rest.length});
     r.parts = keep.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
   });
 
@@ -614,28 +650,31 @@ function openCompare(n, year){
 
   let html = `<div class="cmp-grid" style="grid-template-columns:repeat(${rows.length},minmax(0,1fr))">`;
   for(const r of rows){
-    const me = r.y===year, part = r.D.months < 12, ap = r.f !== 1 ? '≈' : '';
+    const me = r.y===year, part = r.D.months < 12, ap = r.pro ? '≈' : '';
+    const range = part ? `Jan–${MON[r.D.months-1]}` : '';
+    const how = !part ? 'Full year' : !r.pro ? `${range} · one-off, as spent` : r.anyOne ? `${range} · ongoing ×${+(12/r.D.months).toFixed(1)}, one-offs as spent` : `${range} ×${+(12/r.D.months).toFixed(1)}`;
+    const soFar = sel && sel.D.months < 12 && sel.anyOne ? ' so far' : '';
     let delta = '';
     if(!me && sel && sel.fa!=null && r.fa){
       const diff = sel.fa - r.fa, pct = diff/r.fa*100, good = isIncome ? diff>=0 : diff<=0;
-      delta = Math.abs(diff) < 1 ? `Same as ${year}` : `<span class="${good?'good':'bad'}">${year}: ${diff>0?'▲':'▼'}${gbp(Math.abs(diff))} (${diff>0?'+':'−'}${Math.abs(pct).toFixed(0)}%)</span>`;
+      delta = Math.abs(diff) < 1 ? `Same as ${year}` : `<span class="${good?'good':'bad'}">${year}${soFar}: ${diff>0?'▲':'▼'}${gbp(Math.abs(diff))} (${diff>0?'+':'−'}${Math.abs(pct).toFixed(0)}%)</span>`;
     }
     html += `<section class="col${me?' me':''}">
       <div class="c-head"><span class="c-yr mono">${r.y}</span>${me?'<span class="c-now">viewing</span>':''}
-        <span class="c-sub">${part?`Jan–${MON[r.D.months-1]} ×${+(12/r.D.months).toFixed(1)}`:'Full year'}</span>
+        <span class="c-sub">${how}</span>
         <span class="c-amt mono">${r.focus ? ap+gbp(r.fa) : '—'}</span>
-        ${part && r.focus ? `<span class="c-sub">${gbp(r.focus)} so far</span>` : ''}
+        ${part && r.focus && r.pro ? `<span class="c-sub">${gbp(r.focus)} so far</span>` : ''}
         <span class="c-delta">${delta || '&nbsp;'}</span></div>
       <div class="c-body">
       ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${r.y}</div>`}
-      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}"><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${ap}${gbp(p.a)}</span></li>`).join('')
+      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}"><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''}</span></li>`).join('')
         || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
       </div>
     </section>`;
   }
   html += `</div>`;
   document.getElementById('cmpTitle').textContent = title;
-  document.getElementById('cmpSub').textContent = (hl ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years pro-rated to a full year (≈)' : '');
+  document.getElementById('cmpSub').textContent = (hl ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
   rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right'}); });
