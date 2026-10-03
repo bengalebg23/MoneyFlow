@@ -372,15 +372,26 @@ function parseSantander(A){
   if(hr < 1) throw new Error('Couldn’t find the Dec…Jan month header row on the Santander sheet.');
   const blocks = [];
   A[hr].forEach((c,j)=>{ if(str(c)==='Dec' && str(A[hr][j+1])==='Nov') blocks.push(j); });
-  const yearOf = b => { for(const j of [b+13, b]){ const y = num((A[hr-1]||[])[j]); if(y>2000 && y<2100) return String(Math.round(y)); } return null; };
+  // a block's year label can sit on its month cells (b) or its BUDGET column (b+13), and the sheet is not always consistent
+  // (some month cells still say last year; one BUDGET cell holds the next block's year). Blocks run newest → oldest,
+  // so take the candidate closest to "one year before the previous block" (the newest block takes its latest label).
+  const yearCands = b => [b+13, b].map(j => Math.round(num((A[hr-1]||[])[j]))).filter(y => y>2000 && y<2100);
+  let prevY = null;
   const years = {};
   for(const b of blocks){
-    const y = yearOf(b); if(!y || years[y]) continue;
+    const cands = yearCands(b); if(!cands.length) continue;
+    const want = prevY==null ? null : prevY-1;
+    const yn = want==null ? Math.max(...cands) : cands.filter(x=>x<prevY).sort((p,q)=>Math.abs(p-want)-Math.abs(q-want))[0];
+    if(yn==null) continue;
+    prevY = yn; const y = String(yn); if(years[y]) continue;
     // months filled = Jan..Dec with a mortgage payment
     const mRow = A.find(r => r && str(r[1])==='Mortgage');
     let filled = 0, lastM = 0;
     if(mRow) for(let k=0;k<12;k++){ if(num(mRow[b+11-k])) { filled++; lastM = k+1; } }
-    const useAnnual = filled < 10 && b-5 >= 0 && mRow && num(mRow[b-5]) > 0;
+    // annual figures live in the gap left of a block; if that column belongs to the block on the left it is just a month, not an annual figure
+    const pb = blocks[blocks.indexOf(b)-1];
+    const useAnnual = filled < 10 && b-5 >= 0 && (pb==null || b-5 > pb+13) && mRow && num(mRow[b-5]) > 0;
+    if(!useAnnual && lastM - filled > 2) continue; // a few stray months at the end of a year (e.g. an old part-year), not a usable year
     const val = r => useAnnual ? num(r[b-5]) : (()=>{ let s=0; for(let k=0;k<12;k++) s+=num(r[b+k]); return s; })();
     const inc = {"Ben":0,"Emily":0,"Child Benefit":0,"Other income":0}, out = {};
     let section = '', lastPerson = '';
