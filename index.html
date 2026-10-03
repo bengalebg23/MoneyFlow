@@ -411,6 +411,10 @@ function parseSantander(A){
       } else if(section==='Baseline'){
         if(BASE[lab] && v>0) out[BASE[lab]] = v;
         if(BASE_CAT[lab]) catTotal[BASE_CAT[lab]] = v;
+      } else if(/^2nd mortgage/i.test(lab) && SECTION[section]){
+        // the 2nd mortgage row sits at the foot of the Holiday block on the sheet, but it is a mortgage payment, not a holiday
+        if(v>0) out.Mortgage = (out.Mortgage||0) + v;
+        const cat = SECTION[section]; if(cat in catTotal) catTotal[cat] -= v;
       } else if(SECTION[section] && v>0 && lab!=='CAPEX'){
         const cat = SECTION[section], name = ALIAS[lab] || lab.replace(/\s+/g,' ');
         out[cat] = out[cat] || {}; out[cat][name] = (out[cat][name]||0) + v;
