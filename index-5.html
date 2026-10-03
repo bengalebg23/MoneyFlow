@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════════════════
+  MONEY FLOW — HANDOFF NOTES (read this first in any new Claude chat)
+  ═══════════════════════════════════════════════════════════════════════
+
+  WHAT THIS IS
+  A single-file PWA that draws a Sankey diagram per year of the household
+  joint account (Santander), in the style of the r/FIREUK SankeyMATIC posts:
+  income sources → household pot → spending categories → individual items.
+  Data comes from the "Santander" sheet of Ben's "2026 Finances" workbook.
+  Intended repo: bengalebg23/MoneyFlow, served via GitHub Pages at
+  bengalebg23.github.io/MoneyFlow/.
+
+  ARCHITECTURE
+  - Single index.html, vanilla JS, no build step. Same pattern and look as
+    MealRota (Inter + IBM Plex Mono + Patrick Hand, #F7F8FA ground).
+  - d3 7.9.0 + d3-sankey 0.12.3 draw the chart; SheetJS 0.18.5 reads the xlsx.
+  - BUILTIN_DATA = figures taken from "2026 finances 5 -AI.xlsx" (3 Oct 2026).
+    2026 is Jan–Jun only (sheet ran to early June). 2026 splits Emily's
+    £13,123 April one-off (driveway money) from her regular £750/month.
+  - "Load spreadsheet" re-reads the Santander sheet in the browser and
+    replaces the built-in figures (kept in localStorage, STORE_KEY).
+    Parser rules (parseSantander):
+      · year blocks = each "Dec" in the month header row, 12 cols Dec→Jan;
+        block year = the number above its BUDGET column (block+13), else above
+        the block. (The sheet's top-left block is labelled 2025 but is 2026.)
+      · a block with ≥10 months of mortgage is summed month by month; older
+        partial blocks use the annual TOTAL column at block−5.
+      · sections come from col A headers (income, Baseline, Food, variable,
+        Bills, Savings, House, Parties, Holiday, Annual payments); items from
+        col B. "Total"/blank rows and zero/negative items are skipped.
+      · older years (annual mode) take Ben/Emily from their Total rows, and a
+        category falls back to its single total when its items don't add up
+        to within 10% (the 2024 food items hold monthly averages).
+  - Nothing is synced; localStorage only. No Firebase needed.
+
+  CHANGELOG
+  v1.0.0 — First version. Year tabs (2024 / 2025 / 2026 YTD), totals strip,
+           Sankey with optional item breakdown, sortable-by-size breakdown
+           table, xlsx import with reset to built-in figures.
+  ═══════════════════════════════════════════════════════════════════════
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F7F8FA">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Money Flow">
+<title>Money Flow v1.0.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F7F8FA; --surface:#FFFFFF; --surface-2:#EEF1F5; --line:#D7DCE3;
+    --paper:#26313F; --paper-dim:#5b6b7d; --muted:#6b7a8c;
+    --mustard:#2F6FE4; --mustard-dim:#1f4fb0; --rose:#F0703C; --today:#2FA84F;
+    --c-home:#2a78d6; --c-food:#eb6834; --c-spend:#1baf7a; --c-kids:#e87ba4;
+    --c-trips:#eda100; --c-annual:#4a3aa7; --c-in:#8a97a8; --c-gap:#e34948; --c-left:#2FA84F;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg); color:var(--paper); font-family:'Inter',system-ui,sans-serif; min-height:100vh; padding-bottom:48px;}
+  @media (prefers-reduced-motion: reduce){ *{animation-duration:0.001ms !important; transition-duration:0.001ms !important;} }
+  .display{font-family:'Patrick Hand',cursive;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  header.top{
+    padding:calc(14px + env(safe-area-inset-top,0px)) 18px 10px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;
+    background:linear-gradient(180deg, var(--bg) 80%, transparent); backdrop-filter:blur(6px);
+  }
+  .eyebrow{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 2px;}
+  h1.title{font-size:28px; margin:0; font-weight:400;}
+  .title-row{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 9px;}
+  .version-badge{flex:none; font-size:11px; font-weight:600; color:var(--mustard); background:var(--surface); border:1px solid var(--mustard-dim); padding:4px 9px; border-radius:20px;}
+  .year-tabs{display:flex; gap:5px;}
+  .yr-tab{
+    flex:1; text-align:center; padding:6px 0 5px; border-radius:9px; background:var(--surface); border:1px solid var(--line);
+    font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:var(--paper-dim); cursor:pointer;
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .yr-tab .sub{display:block; font-family:'Inter',sans-serif; font-size:8px; font-weight:500; letter-spacing:.06em; margin-top:1px; opacity:.7; text-transform:uppercase;}
+  .yr-tab.active{background:var(--mustard); color:#fff; border-color:var(--mustard);}
+  .yr-tab:focus-visible, button:focus-visible, label.chk:focus-within{outline:2px solid var(--mustard); outline-offset:2px;}
+
+  main{max-width:1180px; margin:0 auto; padding:16px 18px 0; display:grid; gap:16px;}
+  .stats{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; display:grid; gap:2px; min-width:0;}
+  .stat .k{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+  .stat .v{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:clamp(17px,4.4vw,26px); font-variant-numeric:tabular-nums;}
+  .stat .s{font-size:12px; color:var(--paper-dim);}
+  .neg{color:var(--c-gap);} .pos{color:var(--today);}
+
+  .bar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;}
+  label.chk{display:inline-flex; gap:7px; align-items:center; font-size:13px; color:var(--paper-dim); cursor:pointer; border-radius:8px;}
+  label.chk input{accent-color:var(--mustard); width:16px; height:16px;}
+  .btn{font:inherit; font-size:13px; font-weight:600; padding:7px 12px; border-radius:9px; border:1px solid var(--line); background:var(--surface); color:var(--paper); cursor:pointer;}
+  .btn.primary{background:var(--mustard); border-color:var(--mustard); color:#fff;}
+  .btns{display:flex; gap:6px; flex-wrap:wrap;}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 0; position:relative;}
+  .scroller{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  svg{display:block;}
+  .nlabel{font-size:12.5px; fill:var(--paper); font-family:'Inter',sans-serif;}
+  .nlabel .amt{fill:var(--paper-dim); font-family:'IBM Plex Mono',monospace; font-size:11.5px;}
+  .nlabel.big{font-weight:600; font-size:13.5px;}
+  .link{fill:none; stroke-opacity:.38; transition:stroke-opacity .15s;}
+  .link:hover{stroke-opacity:.72;}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 14px; padding:6px 14px 0; font-size:12px; color:var(--paper-dim);}
+  .legend span{display:inline-flex; align-items:center; gap:6px;}
+  .legend i{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .note{font-size:12px; color:var(--muted); margin:6px 14px 0;}
+  .src{font-size:12px; color:var(--muted); margin:0;}
+  .tip{position:fixed; pointer-events:none; background:var(--paper); color:#fff; font-size:12.5px; padding:6px 10px; border-radius:8px; max-width:260px; z-index:30;}
+  .tip b{font-family:'IBM Plex Mono',monospace;}
+
+  h2{font-family:'Patrick Hand',cursive; font-weight:400; font-size:24px; margin:4px 0 0;}
+  .tbl-wrap{overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
+  table{border-collapse:collapse; width:100%; font-size:13.5px;}
+  th,td{padding:8px 12px; text-align:right; border-bottom:1px solid var(--surface-2);}
+  td:not(:first-child){font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;}
+  th:first-child,td:first-child{text-align:left;}
+  th{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-weight:600;}
+  td .sw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:8px; vertical-align:middle;}
+  tr.cat{cursor:pointer;} tr.cat td:first-child::after{content:" ▸"; color:var(--muted); font-size:11px;}
+  tr.cat.open td:first-child::after{content:" ▾";}
+  tr.sub td{color:var(--paper-dim); font-size:12.5px; padding-block:4px;}
+  tr.sub td:first-child{padding-left:30px;}
+  tfoot td{font-weight:600;}
+  .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--paper); color:#fff; padding:9px 14px; border-radius:10px; font-size:13px; z-index:40; max-width:90vw;}
+  @media (max-width:520px){ .stats{grid-template-columns:1fr 1fr;} .stats .stat:last-child{grid-column:1/-1;} }
+</style>
+</head>
+<body>
+<header class="top">
+  <p class="eyebrow">Joint account · where it all went</p>
+  <div class="title-row">
+    <h1 class="title display">Money Flow</h1>
+    <span class="version-badge mono" id="versionBadge"></span>
+  </div>
+  <div class="year-tabs" id="yearTabs" role="tablist" aria-label="Year"></div>
+</header>
+
+<main>
+  <div class="stats" id="stats"></div>
+
+  <div class="bar">
+    <label class="chk"><input type="checkbox" id="detail"> Show item breakdown</label>
+    <div class="btns">
+      <button class="btn primary" id="loadBtn">Load spreadsheet</button>
+      <button class="btn" id="resetBtn" hidden>Use built-in figures</button>
+      <input type="file" id="fileIn" accept=".xlsx,.xlsm,.xls" hidden>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="scroller" id="scroller"><svg id="sankey" role="img" aria-label="Sankey diagram of household income and spending"></svg></div>
+    <div class="legend" id="legend"></div>
+    <p class="note" id="note"></p>
+  </div>
+  <p class="src" id="src"></p>
+
+  <h2>Breakdown</h2>
+  <div class="tbl-wrap"><table id="tbl"></table></div>
+</main>
+<div class="tip" id="tip" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const APP_VERSION = '1.0.0';
+const STORE_KEY = 'moneyflow.data.v1';
+const PREF_KEY = 'moneyflow.prefs.v1';
+
+const CATS = { // category → colour family, in display order of the legend
+  "Mortgage":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Home projects":"home",
+  "Food shop":"food","Everyday spending":"spend","Nursery":"kids","Kids' savings":"kids",
+  "Holidays":"trips","Parties & weddings":"trips","Annual payments":"annual"
+};
+const FAMLABEL = {home:"Home & bills",food:"Food",spend:"Everyday spending",kids:"Kids",trips:"Holidays & events",annual:"Annual payments"};
+
+const BUILTIN_DATA = {
+ source:'Built-in figures from “2026 finances 5 -AI.xlsx” (3 Oct 2026)',
+ years:{
+ "2024":{months:12,
+  income:{"Ben":31335,"Emily":10208,"Child Benefit":1304,"Other income":249},
+  out:{
+   "Mortgage":16104,"Council Tax":1954,"Energy":1212,
+   "Bills & subs":{"Water":499,"Now TV":321,"Life insurance":192,"Netflix":192,"Stocked":160,"Spotify":140,"Washing machine":36,"Account fee":33},
+   "Food shop":5265,
+   "Everyday spending":{"Amazon":1674,"Eating out":980,"Reuben":983,"Birthdays & anniv.":942,"Christmas":891,"Takeaway":739,"Vivien":672,"Trips out":486,"Cash":385,"Misc":335,"House bits":317,"School":130,"Treat yo'self":46},
+   "Nursery":976,
+   "Home projects":{"Solar":5900,"New bed":572,"Decorative":287},
+   "Holidays":{"Tenerife":2716},
+   "Parties & weddings":{"Baby shower":340,"Reuben's birthday":160},
+   "Annual payments":{"Emily car service/MOT":500,"Home insurance":201,"Amazon Prime":95,"Disney+":90,"Amazon Photos":80,"Garden bin":30}
+  }, note:"2024 food shop isn't split by supermarket in the sheet, so it shows as one total."},
+ "2025":{months:12,
+  income:{"Ben":34612,"Emily":8548,"Child Benefit":1345,"Other income":1084},
+  out:{
+   "Mortgage":15468,"Council Tax":2041,"Energy":1160,
+   "Bills & subs":{"Water":596,"Vodafone":320,"Netflix":222,"Life insurance":192,"Planthood":152,"Spotify":146,"Stocked":112,"Washing machine":78,"Now TV":56,"Account fee":34},
+   "Food shop":{"ASDA":4195,"Aldi":1043,"Tesco":532,"Co-op / Waitrose":278},
+   "Everyday spending":{"Amazon":2091,"Birthdays & anniv.":967,"Reuben":916,"Trips out":831,"Christmas":818,"Vivien":718,"Takeaway":661,"Misc":566,"Eating out":558,"Ben's phone":354,"Cash":292,"House bits":261,"Treat yo'self":200,"Clothes":136,"School":125,"Tennis":42},
+   "Nursery":566,
+   "Kids' savings":{"Reuben":1320,"Vivien":980},
+   "Home projects":{"Mortgage fee":290,"AC unit":277,"Christmas tree":203,"Decorating":137,"Drawers":81,"Toilet repair":38},
+   "Holidays":{"Algarve 2026 (paid ahead)":1879,"Majorca":1023,"Centre Parcs":802,"Sundown":335},
+   "Parties & weddings":{"Johnny & Billie wedding":1126},
+   "Annual payments":{"Home insurance":184,"Emily's glasses":145,"Amazon Prime":113,"Disney+":100,"Amazon Photos":89,"Garden bin":60}
+  }, note:""},
+ "2026":{months:6,
+  income:{"Ben":13981,"Emily":5300,"Emily (one-off, April)":13123,"Child Benefit":633,"Other income":181},
+  out:{
+   "Mortgage":8400,"Council Tax":627,"Energy":500,
+   "Bills & subs":{"Water":386,"Vodafone":182,"Stocked":114,"Life insurance":96,"Netflix":95,"Spotify":65,"Washing machine":35,"Account fee":18},
+   "Food shop":{"ASDA":2510,"Aldi":404,"Tesco":281,"Co-op / Waitrose":88},
+   "Everyday spending":{"Amazon":920,"Misc":548,"Clothes":476,"Eating out":282,"Takeaway":261,"Vivien":173,"Reuben":167,"House bits":120,"Trips out":114,"Christmas":70,"School":62,"Birthdays & anniv.":51,"Tennis":14,"Cash":10},
+   "Nursery":605,
+   "Kids' savings":{"Vivien":425,"Reuben":80},
+   "Home projects":{"Driveway":11761,"Decorating":195},
+   "Holidays":{"Algarve":1766,"Holland":1346,"Devon camping":1317,"Ironbridge":326},
+   "Annual payments":{"Amazon Prime":95}
+  }, note:"The April one-off from Emily covered the driveway."}
+ }
+};
+
+// ── state ──
+let DATA = BUILTIN_DATA, usingImport = false;
+try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.years){ DATA = s; usingImport = true; } }catch(e){}
+let prefs = {year:null, detail:window.innerWidth >= 700};
+try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }catch(e){}
+const savePrefs = () => { try{ localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); }catch(e){} };
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
+const total = v => typeof v === "number" ? v : Object.values(v).reduce((a,b)=>a+b,0);
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const yearLabel = (y,m) => m >= 12 ? `${y} (full year)` : `${y} (Jan to ${MON[m-1]})`;
+const famColor = f => css("--c-"+f);
+
+// ── xlsx import ──
+const ALIAS = {"AMZ":"Amazon","BD / Anniversary":"Birthdays & anniv.","Xmas":"Christmas","Treat Yo'self":"Treat yo'self","MISC":"Misc",
+  "House":"House bits","Bens Phone":"Ben's phone","Aviva Life Ins":"Life insurance","Vodaphone":"Vodafone","spotify":"Spotify",
+  "Wash machine":"Washing machine","Now Tv":"Now TV","TESCO":"Tesco","CC / Waitrose":"Co-op / Waitrose","Reuben Savings":"Reuben",
+  "Vivien Savings":"Vivien","Disney":"Disney+","house Ins":"Home insurance","General dec":"Decorating","AC Unit":"AC unit",
+  "mortgage":"Mortgage fee","Xmas tree":"Christmas tree","broken toilet":"Toilet repair","driveway":"Driveway","clothes":"Clothes",
+  "garden bin":"Garden bin","Emily Glasses":"Emily's glasses","Trips Out":"Trips out","Eating Out":"Eating out"};
+const SECTION = {"Food":"Food shop","variable":"Everyday spending","Bills":"Bills & subs","Savings":"Kids' savings",
+  "House":"Home projects","Parties":"Parties & weddings","Holiday":"Holidays","Annual payments":"Annual payments"};
+const BASE = {"Mortgage":"Mortgage","Council Tax":"Council Tax","EDF/Octopus":"Energy","Nursery":"Nursery"};
+
+function parseSantander(A){
+  const str = v => v==null ? '' : String(v).trim();
+  const num = v => typeof v === 'number' ? v : (isFinite(parseFloat(v)) ? parseFloat(v) : 0);
+  const isLabel = v => typeof v === 'string' && v.trim() && !isFinite(parseFloat(v)) && !v.startsWith('#');
+  const hr = A.findIndex(r => r && r.some(c=>str(c)==='Dec') && r.some(c=>str(c)==='Jan'));
+  if(hr < 1) throw new Error('Couldn’t find the Dec…Jan month header row on the Santander sheet.');
+  const blocks = [];
+  A[hr].forEach((c,j)=>{ if(str(c)==='Dec' && str(A[hr][j+1])==='Nov') blocks.push(j); });
+  const yearOf = b => { for(const j of [b+13, b]){ const y = num((A[hr-1]||[])[j]); if(y>2000 && y<2100) return String(Math.round(y)); } return null; };
+  const years = {};
+  for(const b of blocks){
+    const y = yearOf(b); if(!y || years[y]) continue;
+    // months filled = Jan..Dec with a mortgage payment
+    const mRow = A.find(r => r && str(r[1])==='Mortgage');
+    let filled = 0, lastM = 0;
+    if(mRow) for(let k=0;k<12;k++){ if(num(mRow[b+11-k])) { filled++; lastM = k+1; } }
+    const useAnnual = filled < 10 && b-5 >= 0 && mRow && num(mRow[b-5]) > 0;
+    const val = r => useAnnual ? num(r[b-5]) : (()=>{ let s=0; for(let k=0;k<12;k++) s+=num(r[b+k]); return s; })();
+    const inc = {"Ben":0,"Emily":0,"Child Benefit":0,"Other income":0}, out = {};
+    let section = '', lastPerson = '';
+    const catTotal = {}; // annual-mode check totals per category
+    const BASE_CAT = {"Food":"Food shop","variable":"Everyday spending","Bills":"Bills & subs","Savings":"Kids' savings"};
+    for(let i=hr+1;i<A.length;i++){
+      const r = A[i]; if(!r) continue;
+      const c0 = str(r[0]), lab = str(r[1]);
+      if(lab==='LNS') break;
+      if(isLabel(r[0]) && !lab){ section = c0; if(SECTION[c0] && !(SECTION[c0] in catTotal)) catTotal[SECTION[c0]] = Math.round(val(r)); continue; }
+      if(!lab) continue;
+      if(/^total$/i.test(lab)){
+        // older years only keep an annual figure on each person's Total row
+        if(useAnnual && section==='income' && (lastPerson==='Ben'||lastPerson==='Emily')) inc[lastPerson] = Math.round(val(r));
+        lastPerson = ''; continue;
+      }
+      const v = Math.round(val(r));
+      if(section==='income'){
+        if(lab==='Ben'||lab==='Emily'){ inc[lab] += v; lastPerson = lab; }
+        else if(lab==='Gov') inc["Child Benefit"] += v; else inc["Other income"] += v;
+      } else if(section==='Baseline'){
+        if(BASE[lab] && v>0) out[BASE[lab]] = v;
+        if(BASE_CAT[lab]) catTotal[BASE_CAT[lab]] = v;
+      } else if(SECTION[section] && v>0 && lab!=='CAPEX'){
+        const cat = SECTION[section], name = ALIAS[lab] || lab.replace(/\s+/g,' ');
+        out[cat] = out[cat] || {}; out[cat][name] = (out[cat][name]||0) + v;
+      }
+    }
+    if(useAnnual){ // older sheets mix monthly averages into item rows: trust the category total when items don't add up
+      for(const [cat,T] of Object.entries(catTotal)){
+        const S = out[cat] ? total(out[cat]) : 0;
+        if(T <= 0) delete out[cat];
+        else if(Math.abs(S-T)/T > 0.1) out[cat] = T;
+      }
+    }
+    for(const k of Object.keys(inc)) if(inc[k] <= 0) delete inc[k];
+    if(!out.Mortgage && !Object.keys(inc).length) continue;
+    years[y] = {months: useAnnual ? 12 : Math.max(lastM,1), income:inc, out, note:''};
+  }
+  if(!Object.keys(years).length) throw new Error('No year blocks with figures were found.');
+  return years;
+}
+
+document.getElementById('loadBtn').onclick = () => document.getElementById('fileIn').click();
+document.getElementById('fileIn').onchange = async ev => {
+  const f = ev.target.files[0]; if(!f) return;
+  try{
+    const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+    const ws = wb.Sheets['Santander'];
+    if(!ws) throw new Error('This workbook has no “Santander” sheet.');
+    const years = parseSantander(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}));
+    DATA = {source:`Imported from “${f.name}” on ${new Date().toLocaleDateString('en-GB')}`, years};
+    usingImport = true;
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(DATA)); }catch(e){}
+    prefs.year = null; toast(`Loaded ${Object.keys(years).sort().join(', ')} from ${f.name}`); render();
+  }catch(e){ toast(e.message || 'Couldn’t read that file. Pick the finances .xlsx.'); }
+  ev.target.value = '';
+};
+document.getElementById('resetBtn').onclick = () => {
+  try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+  DATA = BUILTIN_DATA; usingImport = false; prefs.year = null; toast('Using built-in figures'); render();
+};
+let tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,3200); }
+
+// ── sankey ──
+function build(d, detail){
+  const nodes = [], links = [], idx = {};
+  const node = (name, color, col) => { if(!(name in idx)){ idx[name]=nodes.length; nodes.push({name,color,col}); } return idx[name]; };
+  const inTot = Object.values(d.income).reduce((a,b)=>a+b,0);
+  const outTot = Object.values(d.out).reduce((a,v)=>a+total(v),0);
+  const hub = node("Household pot", css("--paper-dim"), 1);
+  for (const [k,v] of Object.entries(d.income).sort((a,b)=>b[1]-a[1])) links.push({source:node(k,css("--c-in"),0),target:hub,value:v,color:css("--c-in")});
+  if (outTot > inTot) links.push({source:node("Drawn from balance",css("--c-gap"),0),target:hub,value:outTot-inTot,color:css("--c-gap")});
+  for (const [cat,v] of Object.entries(d.out).sort((a,b)=>total(b[1])-total(a[1]))){
+    if (total(v) <= 0) continue;
+    const c = famColor(CATS[cat] || 'home'), ci = node(cat, c, 2);
+    links.push({source:hub,target:ci,value:total(v),color:c});
+    if (detail && typeof v === "object" && Object.keys(v).length > 1){
+      const tot = total(v); let other = 0, shown = 0;
+      for (const [k,val] of Object.entries(v).sort((a,b)=>b[1]-a[1])){
+        if (shown < 6 && val/tot >= 0.04) { links.push({source:ci,target:node(cat+"›"+k,c,3),value:val,color:c}); shown++; }
+        else other += val;
+      }
+      if (other > 0) links.push({source:ci,target:node(cat+"›Other",c,3),value:other,color:c});
+    }
+  }
+  if (inTot > outTot) links.push({source:hub,target:node("Left over",css("--c-left"),2),value:inTot-outTot,color:css("--c-left")});
+  return {nodes,links,inTot,outTot};
+}
+const clean = n => n.includes("›") ? n.split("›")[1] : n;
+
+const tip = document.getElementById("tip");
+function showTip(ev, html){ tip.innerHTML = html; tip.hidden = false;
+  tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8)+"px"; tip.style.top = (ev.clientY + 14)+"px"; }
+const hideTip = () => tip.hidden = true;
+
+function render(){
+  const yrs = Object.keys(DATA.years).sort();
+  if(!prefs.year || !DATA.years[prefs.year]) prefs.year = yrs.find(y=>DATA.years[y].months>=12 && y===String(new Date().getFullYear()-1)) || yrs[yrs.length-1];
+  const year = prefs.year, d = DATA.years[year], detail = prefs.detail;
+  document.getElementById('detail').checked = detail;
+  document.getElementById('resetBtn').hidden = !usingImport;
+  document.getElementById('src').textContent = DATA.source + '.';
+
+  document.getElementById('yearTabs').innerHTML = yrs.map(y=>{
+    const m = DATA.years[y].months;
+    return `<button class="yr-tab${y===year?' active':''}" role="tab" aria-selected="${y===year}" data-y="${y}">${y}<span class="sub">${m>=12?'full year':'Jan–'+MON[m-1]}</span></button>`;
+  }).join('');
+  document.querySelectorAll('.yr-tab').forEach(b=>b.onclick=()=>{ prefs.year=b.dataset.y; savePrefs(); setTimeout(render,0); });
+
+  const g = build(d, detail), net = g.inTot - g.outTot;
+  const mort = total(d.out.Mortgage || 0);
+  document.getElementById("stats").innerHTML = `
+    <div class="stat"><span class="k">Money in</span><span class="v">${gbp(g.inTot)}</span><span class="s">${yearLabel(year,d.months)}</span></div>
+    <div class="stat"><span class="k">Money out</span><span class="v">${gbp(g.outTot)}</span><span class="s">${Math.round(mort/g.outTot*100)}% on the mortgage</span></div>
+    <div class="stat"><span class="k">Net</span><span class="v ${net<0?'neg':'pos'}">${net<0?'−':'+'}${gbp(Math.abs(net))}</span><span class="s">${net<0?'Spent more than came in':'Left in the account'}</span></div>`;
+  document.getElementById("note").textContent = d.note || '';
+
+  const scroller = document.getElementById("scroller");
+  const W = Math.max(scroller.clientWidth, detail ? 900 : 560);
+  const H = Math.max(detail ? 640 : 420, g.nodes.length * (detail ? 19 : 26));
+  const svg = d3.select("#sankey").attr("width",W).attr("height",H).attr("viewBox",`0 0 ${W} ${H}`);
+  svg.selectAll("*").remove();
+  const graph = d3.sankey().nodeWidth(10).nodePadding(detail ? 9 : 12).nodeAlign(n => n.col).nodeSort(null)
+    .extent([[124, 14],[W - (detail ? 196 : 176), H - 14]])
+    ({nodes:g.nodes.map(n=>({...n})), links:g.links.map(l=>({...l}))});
+
+  svg.append("g").selectAll("path").data(graph.links).join("path")
+    .attr("class","link").attr("d", d3.sankeyLinkHorizontal())
+    .attr("stroke", l=>l.color).attr("stroke-width", l=>Math.max(1,l.width))
+    .on("pointermove",(ev,l)=>showTip(ev, `${clean(l.source.name)} → ${clean(l.target.name)}<br><b>${gbp(l.value)}</b> · ${(l.value/g.inTot*100).toFixed(1)}% of income`))
+    .on("pointerleave",hideTip);
+  const nd = svg.append("g").selectAll("g").data(graph.nodes).join("g");
+  nd.append("rect").attr("x",n=>n.x0).attr("y",n=>n.y0).attr("width",n=>n.x1-n.x0).attr("height",n=>Math.max(1,n.y1-n.y0))
+    .attr("rx",2).attr("fill",n=>n.color)
+    .on("pointermove",(ev,n)=>showTip(ev, `${clean(n.name)}<br><b>${gbp(n.value)}</b>`)).on("pointerleave",hideTip);
+  nd.append("text").attr("class",n=>"nlabel"+(n.col<=2?" big":""))
+    .attr("x", n => n.col===0 ? n.x0-8 : (n.col===1 ? (n.x0+n.x1)/2 : n.x1+8))
+    .attr("y", n => n.col===1 ? (n.y0 < 22 ? n.y1 + 16 : n.y0 - 6) : (n.y0+n.y1)/2)
+    .attr("dy", n => n.col===1 ? "0" : "0.35em")
+    .attr("text-anchor", n => n.col===0 ? "end" : (n.col===1 ? "middle" : "start"))
+    .each(function(n){
+      if ((n.y1-n.y0) < 3 && n.col===3) return;
+      const t = d3.select(this);
+      t.append("tspan").text(clean(n.name)+" ");
+      t.append("tspan").attr("class","amt").text(gbp(n.value));
+    });
+
+  const fams = [...new Set(Object.keys(d.out).map(k=>CATS[k]||'home'))];
+  document.getElementById("legend").innerHTML =
+    `<span><i style="background:${css('--c-in')}"></i>Income</span>` +
+    fams.map(f=>`<span><i style="background:${famColor(f)}"></i>${FAMLABEL[f]}</span>`).join("") +
+    (net<0?`<span><i style="background:${css('--c-gap')}"></i>Drawn from balance</span>`:`<span><i style="background:${css('--c-left')}"></i>Left over</span>`);
+  renderTable(d, g);
+}
+
+const openCats = new Set();
+function renderTable(d, g){
+  let h = `<thead><tr><th>Category</th><th>Amount</th><th>Per month</th><th>% of in</th></tr></thead><tbody>`;
+  for (const [cat,v] of Object.entries(d.out).sort((a,b)=>total(b[1])-total(a[1]))){
+    const t = total(v), multi = typeof v === "object", open = openCats.has(cat);
+    h += `<tr class="${multi?'cat':''}${open?' open':''}" data-cat="${cat}"><td><span class="sw" style="background:${famColor(CATS[cat]||'home')}"></span>${cat}</td><td>${gbp(t)}</td><td>${gbp(t/d.months)}</td><td>${(t/g.inTot*100).toFixed(1)}%</td></tr>`;
+    if (multi && open) for (const [k,val] of Object.entries(v).sort((a,b)=>b[1]-a[1]))
+      h += `<tr class="sub"><td>${k}</td><td>${gbp(val)}</td><td>${gbp(val/d.months)}</td><td>${(val/g.inTot*100).toFixed(1)}%</td></tr>`;
+  }
+  h += `</tbody><tfoot><tr><td>Total out</td><td>${gbp(g.outTot)}</td><td>${gbp(g.outTot/d.months)}</td><td>${(g.outTot/g.inTot*100).toFixed(1)}%</td></tr></tfoot>`;
+  const tbl = document.getElementById("tbl"); tbl.innerHTML = h;
+  tbl.querySelectorAll('tr.cat').forEach(r=>r.onclick=()=>{ const c=r.dataset.cat; openCats.has(c)?openCats.delete(c):openCats.add(c); setTimeout(()=>renderTable(d,g),0); });
+}
+
+document.getElementById('detail').onchange = e => { prefs.detail = e.target.checked; savePrefs(); render(); };
+let rt; window.addEventListener("resize",()=>{clearTimeout(rt); rt=setTimeout(render,150)});
+document.getElementById('versionBadge').textContent = `v${APP_VERSION}`;
+render();
+</script>
+</body>
+</html>
