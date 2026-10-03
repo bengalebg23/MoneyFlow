@@ -36,6 +36,14 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.1.0 — Chart is now pinch/scroll zoomable and draggable (d3.zoom), with
+           +/−/reset buttons. The item column is always laid out but only
+           shown once zoom ≥ DETAIL_K (1.7); labels keep a fixed screen size and
+           the biggest flows claim label space first, so more labels appear as
+           you zoom. Tapping any band, node or table row opens a bottom-sheet
+           comparing that line across all years on a full-year basis: part
+           years are pro-rated from their monthly average (value / months × 12).
+           Removed the "Show item breakdown" checkbox (zoom replaces it).
   v1.0.0 — First version. Year tabs (2024 / 2025 / 2026 YTD), totals strip,
            Sankey with optional item breakdown, sortable-by-size breakdown
            table, xlsx import with reset to built-in figures.
@@ -49,7 +57,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.0.0</title>
+<title>Money Flow v1.1.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -63,6 +71,7 @@
     --radius:14px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
   html,body{margin:0;padding:0;}
   body{background:var(--bg); color:var(--paper); font-family:'Inter',system-ui,sans-serif; min-height:100vh; padding-bottom:48px;}
   @media (prefers-reduced-motion: reduce){ *{animation-duration:0.001ms !important; transition-duration:0.001ms !important;} }
@@ -119,6 +128,39 @@
   .tip{position:fixed; pointer-events:none; background:var(--paper); color:#fff; font-size:12.5px; padding:6px 10px; border-radius:8px; max-width:260px; z-index:30;}
   .tip b{font-family:'IBM Plex Mono',monospace;}
 
+  .chart-box{position:relative; height:min(72vh, 620px); min-height:380px; overflow:hidden; touch-action:none; cursor:grab;}
+  .chart-box:active{cursor:grabbing;}
+  .chart-box svg{width:100%; height:100%; user-select:none; -webkit-user-select:none;}
+  .link.item, .nrect.item{opacity:0; pointer-events:none; transition:opacity .25s;}
+  svg.detail .link.item, svg.detail .nrect.item{opacity:1; pointer-events:auto;}
+  .nrect{cursor:pointer;} .link{cursor:pointer;}
+  .lab-bg{fill:var(--surface); fill-opacity:.9; stroke:var(--line);}
+  .zbtns{position:absolute; top:8px; right:8px; display:flex; flex-direction:column; gap:4px;}
+  .zb{width:34px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--surface); color:var(--paper); font:600 17px 'Inter',sans-serif; cursor:pointer; box-shadow:0 1px 3px rgba(38,49,63,.08);}
+  .scrim{position:fixed; inset:0; background:rgba(38,49,63,.35); z-index:50;}
+  .sheet{position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:min(560px,100%); max-height:82vh; overflow:auto; background:var(--surface); border-radius:18px 18px 0 0; padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px)); z-index:51; box-shadow:0 -8px 30px rgba(38,49,63,.18); display:grid; gap:12px;}
+  .sheet-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .sheet h3{margin:0; font-size:26px; font-weight:400; line-height:1.1;}
+  .x{border:1px solid var(--line); background:var(--surface-2); border-radius:9px; width:32px; height:32px; cursor:pointer; color:var(--paper); font-size:14px; flex:none;}
+  .sheet-main{display:flex; flex-wrap:wrap; gap:8px 22px;}
+  .sheet-main > div{display:grid;}
+  .sheet-main .k{font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+  .sheet-main .big{font-size:20px; font-weight:600;}
+  .sheet-sub, .sheet-note{margin:0; font-size:12.5px; color:var(--paper-dim);}
+  .yrs{display:grid; gap:12px;}
+  .yr{display:grid; gap:4px; padding:8px 10px; border-radius:10px; border:1px solid var(--surface-2);}
+  .yr.me{border-color:var(--mustard); background:var(--surface-2);}
+  .yr-top, .yr-bot{display:flex; justify-content:space-between; gap:10px; font-size:13.5px; flex-wrap:wrap;}
+  .yr-top small, .yl small{font-size:10.5px; color:var(--muted);}
+  .yl{font-weight:600;}
+  .yr-bot{font-size:12px; color:var(--paper-dim);}
+  .track{height:8px; background:var(--surface-2); border-radius:4px; overflow:hidden;}
+  .fill{height:100%; border-radius:4px;}
+  .fill.part{background-image:repeating-linear-gradient(45deg, rgba(255,255,255,.45) 0 3px, transparent 3px 7px);}
+  .dl.good{color:var(--today); font-weight:600;} .dl.bad{color:var(--c-gap); font-weight:600;}
+  .chev{border:0; background:none; color:var(--muted); font-size:12px; width:20px; padding:0; cursor:pointer;}
+  .chev-sp{display:inline-block; width:20px;}
+  tr.row{cursor:pointer;} tr.row:hover td{background:var(--surface-2);}
   h2{font-family:'Patrick Hand',cursive; font-weight:400; font-size:24px; margin:4px 0 0;}
   .tbl-wrap{overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
   table{border-collapse:collapse; width:100%; font-size:13.5px;}
@@ -150,7 +192,7 @@
   <div class="stats" id="stats"></div>
 
   <div class="bar">
-    <label class="chk"><input type="checkbox" id="detail"> Show item breakdown</label>
+    <p class="src" id="zoomHint"></p>
     <div class="btns">
       <button class="btn primary" id="loadBtn">Load spreadsheet</button>
       <button class="btn" id="resetBtn" hidden>Use built-in figures</button>
@@ -159,7 +201,10 @@
   </div>
 
   <div class="card">
-    <div class="scroller" id="scroller"><svg id="sankey" role="img" aria-label="Sankey diagram of household income and spending"></svg></div>
+    <div class="chart-box" id="chartBox">
+      <svg id="sankey" role="img" aria-label="Sankey diagram of household income and spending. Pinch or scroll to zoom; tap a flow to compare years."></svg>
+      <div class="zbtns"><button class="zb" id="zIn" aria-label="Zoom in">+</button><button class="zb" id="zOut" aria-label="Zoom out">−</button><button class="zb" id="zReset" aria-label="Reset zoom">⟲</button></div>
+    </div>
     <div class="legend" id="legend"></div>
     <p class="note" id="note"></p>
   </div>
@@ -170,12 +215,14 @@
 </main>
 <div class="tip" id="tip" hidden></div>
 <div class="toast" id="toast" hidden></div>
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Compare years" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
@@ -339,113 +386,239 @@ document.getElementById('resetBtn').onclick = () => {
 let tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,3200); }
 
 // ── sankey ──
-function build(d, detail){
+// Always laid out with the item column; items only show once zoomed past DETAIL_K.
+const DETAIL_K = 1.7;
+function build(d){
   const nodes = [], links = [], idx = {};
-  const node = (name, color, col) => { if(!(name in idx)){ idx[name]=nodes.length; nodes.push({name,color,col}); } return idx[name]; };
+  const node = (key, color, col, ref) => { if(!(key in idx)){ idx[key]=nodes.length; nodes.push({key,name:clean(key),color,col,ref}); } return idx[key]; };
   const inTot = Object.values(d.income).reduce((a,b)=>a+b,0);
   const outTot = Object.values(d.out).reduce((a,v)=>a+total(v),0);
-  const hub = node("Household pot", css("--paper-dim"), 1);
-  for (const [k,v] of Object.entries(d.income).sort((a,b)=>b[1]-a[1])) links.push({source:node(k,css("--c-in"),0),target:hub,value:v,color:css("--c-in")});
-  if (outTot > inTot) links.push({source:node("Drawn from balance",css("--c-gap"),0),target:hub,value:outTot-inTot,color:css("--c-gap")});
+  const hub = node("Household pot", css("--paper-dim"), 1, {t:'hub'});
+  for (const [k,v] of Object.entries(d.income).sort((a,b)=>b[1]-a[1])) links.push({source:node(k,css("--c-in"),0,{t:'in',name:k}),target:hub,value:v,color:css("--c-in")});
+  if (outTot > inTot) links.push({source:node("Drawn from balance",css("--c-gap"),0,{t:'gap'}),target:hub,value:outTot-inTot,color:css("--c-gap")});
   for (const [cat,v] of Object.entries(d.out).sort((a,b)=>total(b[1])-total(a[1]))){
     if (total(v) <= 0) continue;
-    const c = famColor(CATS[cat] || 'home'), ci = node(cat, c, 2);
+    const c = famColor(CATS[cat] || 'home'), ci = node(cat, c, 2, {t:'cat',cat});
     links.push({source:hub,target:ci,value:total(v),color:c});
-    if (detail && typeof v === "object" && Object.keys(v).length > 1){
+    if (typeof v === "object" && Object.keys(v).length > 1){
       const tot = total(v); let other = 0, shown = 0;
       for (const [k,val] of Object.entries(v).sort((a,b)=>b[1]-a[1])){
-        if (shown < 6 && val/tot >= 0.04) { links.push({source:ci,target:node(cat+"›"+k,c,3),value:val,color:c}); shown++; }
+        if (val <= 0) continue;
+        if (shown < 8 && val/tot >= 0.03) { links.push({source:ci,target:node(cat+"›"+k,c,3,{t:'item',cat,item:k}),value:val,color:c}); shown++; }
         else other += val;
       }
-      if (other > 0) links.push({source:ci,target:node(cat+"›Other",c,3),value:other,color:c});
+      if (other > 0) links.push({source:ci,target:node(cat+"›Other",c,3,{t:'other',cat}),value:other,color:c});
     }
   }
-  if (inTot > outTot) links.push({source:hub,target:node("Left over",css("--c-left"),2),value:inTot-outTot,color:css("--c-left")});
+  if (inTot > outTot) links.push({source:hub,target:node("Left over",css("--c-left"),2,{t:'left'}),value:inTot-outTot,color:css("--c-left")});
   return {nodes,links,inTot,outTot};
 }
-const clean = n => n.includes("›") ? n.split("›")[1] : n;
+function clean(n){ return n.includes("›") ? n.split("›")[1] : n; }
 
 const tip = document.getElementById("tip");
-function showTip(ev, html){ tip.innerHTML = html; tip.hidden = false;
+function showTip(ev, html){ if(ev.pointerType && ev.pointerType!=='mouse') return; tip.innerHTML = html; tip.hidden = false;
   tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8)+"px"; tip.style.top = (ev.clientY + 14)+"px"; }
 const hideTip = () => tip.hidden = true;
 
+let chart = null; // {svg, zoom, graph, ...}
+function drawChart(d, year){
+  const box = document.getElementById('chartBox');
+  const VW = box.clientWidth, VH = box.clientHeight;
+  const g = build(d);
+  const ml = Math.min(120, VW*0.28), mr = 10, nw = 8;
+  const graph = d3.sankey().nodeWidth(nw).nodePadding(5).nodeAlign(n=>n.col).nodeSort(null)
+    .extent([[ml, 12],[VW - mr, VH - 12]])
+    ({nodes:g.nodes.map(n=>({...n})), links:g.links.map(l=>({...l}))});
+  // pin the item column to the right edge (the zoom buttons zoom towards it) to the right edge so the overview uses the width for categories
+  const span = VW - ml - mr, fx = [0, .25, .47, 1];
+  graph.nodes.forEach(n=>{ const x = n.col===3 ? VW - mr - nw : ml + fx[n.col]*span; n.x0 = x; n.x1 = x + nw; });
+
+  const svg = d3.select('#sankey').attr('width',VW).attr('height',VH).attr('viewBox',`0 0 ${VW} ${VH}`);
+  svg.selectAll('*').remove();
+  const gz = svg.append('g');
+  const linkSel = gz.append('g').selectAll('path').data(graph.links).join('path')
+    .attr('class', l=>'link' + (l.target.col===3 ? ' item' : ''))
+    .attr('d', d3.sankeyLinkHorizontal()).attr('stroke', l=>l.color).attr('stroke-width', l=>Math.max(1,l.width))
+    .on('pointermove',(ev,l)=>showTip(ev, `${l.source.name} → ${l.target.name}<br><b>${gbp(l.value)}</b> · tap to compare years`))
+    .on('pointerleave',hideTip)
+    .on('click',(ev,l)=>{ hideTip(); openCompare(l.target, year); });
+  gz.append('g').selectAll('rect').data(graph.nodes).join('rect')
+    .attr('class', n=>'nrect' + (n.col===3 ? ' item' : ''))
+    .attr('x',n=>n.x0).attr('y',n=>n.y0).attr('width',n=>n.x1-n.x0).attr('height',n=>Math.max(1,n.y1-n.y0))
+    .attr('rx',2).attr('fill',n=>n.color)
+    .on('pointermove',(ev,n)=>showTip(ev, `${n.name}<br><b>${gbp(n.value)}</b> · tap to compare years`))
+    .on('pointerleave',hideTip)
+    .on('click',(ev,n)=>{ hideTip(); openCompare(n, year); });
+  const gl = svg.append('g').attr('class','labels');
+
+  let detailOn = null, labels = [];
+  function buildLabels(detail){
+    gl.selectAll('*').remove();
+    labels = graph.nodes.filter(n => detail || n.col < 3).map(n => {
+      // items sit at the right edge, so their labels go on the left of the bar, boxed over the flows
+      const mode = n.col===0 || n.col===3 ? 'left' : n.col===1 || (n.col===2 && detail) ? 'center' : 'right';
+      const two = n.col < 3;
+      const boxed = mode==='center' || n.col===3;
+      const el = gl.append('g').attr('class','lab'+(boxed?' boxed':'')).style('pointer-events','none');
+      const bg = boxed ? el.append('rect').attr('class','lab-bg').attr('rx',5) : null;
+      const t = el.append('text').attr('class','nlabel'+(n.col<=2?' big':'')).attr('text-anchor', mode==='left'?'end':mode==='center'?'middle':'start');
+      if(two){
+        t.append('tspan').attr('x',0).attr('dy', mode==='center' ? '-0.15em' : '-0.2em').text(n.name);
+        t.append('tspan').attr('class','amt').attr('x',0).attr('dy','1.2em').text(gbp(n.value));
+      } else {
+        t.attr('dy','0.35em');
+        t.append('tspan').text(n.name+' ');
+        t.append('tspan').attr('class','amt').text(gbp(n.value));
+      }
+      const bb = t.node().getBBox();
+      if(bg) bg.attr('x',bb.x-6).attr('y',bb.y-3).attr('width',bb.width+12).attr('height',bb.height+6);
+      return {n, el, mode, top:bb.y-3, bot:bb.y+bb.height+3};
+    });
+  }
+  function place(t){
+    const detail = t.k >= DETAIL_K;
+    if(detail !== detailOn){ detailOn = detail; svg.classed('detail', detail); buildLabels(detail); }
+    const taken = {};
+    // biggest flows claim label space first; smaller ones appear as you zoom in
+    [...labels].sort((a,b)=>b.n.value-a.n.value).forEach(L=>{
+      const n = L.n;
+      const cx = L.mode==='left' ? t.applyX(n.x0)-6 : L.mode==='center' ? t.applyX((n.x0+n.x1)/2) : t.applyX(n.x1)+6;
+      let cy = t.applyY((n.y0+n.y1)/2);
+      if(n.col===1) cy = Math.min(Math.max(cy, t.applyY(n.y0)+24), t.applyY(n.y1)-24, VH-24); // keep hub label on screen
+      const top = cy + L.top, bot = cy + L.bot;
+      const col = (taken[n.col] = taken[n.col] || []);
+      const off = bot < 0 || top > VH;
+      const clash = col.some(([a,b]) => top < b + 2 && bot > a - 2);
+      const show = !off && !clash;
+      if(show) col.push([top,bot]);
+      L.el.attr('transform',`translate(${cx},${cy})`).style('display', show ? null : 'none');
+    });
+  }
+
+  const zoom = d3.zoom().scaleExtent([1, 10]).clickDistance(6)
+    .translateExtent([[-ml*0.2, -20],[VW + 20, VH + 20]])
+    .on('zoom', ev => { gz.attr('transform', ev.transform); place(ev.transform); hint(ev.transform.k); });
+  svg.call(zoom).on('dblclick.zoom', null);
+  place(d3.zoomIdentity); hint(1);
+  chart = {svg, zoom};
+}
+function hint(k){
+  document.getElementById('zoomHint').textContent = k >= DETAIL_K ? 'Showing items · tap anything to compare years' : 'Pinch or scroll to zoom in for items · tap anything to compare years';
+}
+function zoomBy(f){ // zoom towards the category/item side, where the detail is
+  if(!chart) return; const el = chart.svg.node();
+  chart.svg.transition().duration(250).call(chart.zoom.scaleBy, f, [el.clientWidth - 14, el.clientHeight/2]);
+}
+document.getElementById('zIn').onclick = () => zoomBy(1.6);
+document.getElementById('zOut').onclick = () => zoomBy(1/1.6);
+document.getElementById('zReset').onclick = () => { if(chart) chart.svg.transition().duration(250).call(chart.zoom.transform, d3.zoomIdentity); };
+
+// ── year comparison pop-up ──
+function valueIn(ref, d){
+  if(!d) return null;
+  const inT = Object.values(d.income).reduce((a,b)=>a+b,0), outT = Object.values(d.out).reduce((a,v)=>a+total(v),0);
+  switch(ref.t){
+    case 'in':   return d.income[ref.name] ?? null;
+    case 'gap':  return Math.max(0, outT - inT);
+    case 'left': return Math.max(0, inT - outT);
+    case 'hub':  return inT;
+    case 'cat':  return d.out[ref.cat]!=null ? total(d.out[ref.cat]) : null;
+    case 'item': { const c = d.out[ref.cat]; return c && typeof c === 'object' ? (c[ref.item] ?? null) : null; }
+    default:     return null;
+  }
+}
+function openCompare(n, year){
+  const ref = n.ref || {}, sel = DATA.years[year];
+  const isIncome = ref.t==='in' || ref.t==='hub' || ref.t==='left';
+  const title = ref.t==='item' ? `${ref.item}` : n.name;
+  const sub = ref.t==='item' || ref.t==='other' ? ref.cat : ref.t==='in' ? 'Income' : ref.t==='cat' ? (FAMLABEL[CATS[ref.cat]]||'') : '';
+  const v = ref.t==='other' ? n.value : valueIn(ref, sel);
+  const m = sel.months, perMo = v/m, annual = perMo*12;
+  let html = `<div class="sheet-head"><div><p class="eyebrow">${sub || '&nbsp;'}</p><h3 class="display">${title}</h3></div><button class="x" id="sheetX" aria-label="Close">✕</button></div>
+    <div class="sheet-main"><div><span class="k">${year}${m<12?' (Jan–'+MON[m-1]+')':''}</span><span class="big mono">${gbp(v)}</span></div>
+    <div><span class="k">Per month</span><span class="big mono">${gbp(perMo)}</span></div>
+    ${m<12?`<div><span class="k">Full-year pace</span><span class="big mono">≈${gbp(annual)}</span></div>`:''}</div>`;
+  if(ref.t==='other'){
+    html += `<p class="sheet-note">“Other” groups this year's smaller items, so it isn't compared across years. Zoom out and use the breakdown table to compare individual items.</p>`;
+  } else {
+    const yrs = Object.keys(DATA.years).sort().reverse();
+    const rows = yrs.map(y => { const D = DATA.years[y], val = valueIn(ref, D); return {y, m:D.months, val, ann: val==null?null:val/D.months*12}; });
+    const max = Math.max(...rows.map(r=>r.ann||0), 1);
+    html += `<p class="sheet-sub">Year by year, on a full-year basis${rows.some(r=>r.m<12)?' (part years pro-rated from their monthly average)':''}</p><div class="yrs">`;
+    for(const r of rows){
+      const me = r.y===year;
+      let delta = '';
+      if(!me && r.ann!=null && r.ann>0){
+        const diff = annual - r.ann, pct = diff / r.ann * 100;
+        const good = isIncome ? diff>=0 : diff<=0;
+        delta = Math.abs(diff) < 1 ? `<span class="dl">same as ${r.y}</span>` :
+          `<span class="dl ${good?'good':'bad'}">${diff>0?'▲':'▼'} ${gbp(Math.abs(diff))}/yr (${diff>0?'+':'−'}${Math.abs(pct).toFixed(0)}%) in ${year} vs ${r.y}</span>`;
+      } else if(!me && (r.val==null || r.val===0)) delta = `<span class="dl">${r.val==null?'not listed separately':'nothing'} in ${r.y}</span>`;
+      html += `<div class="yr${me?' me':''}">
+        <div class="yr-top"><span class="mono yl">${r.y}${r.m<12?'<small> Jan–'+MON[r.m-1]+'</small>':''}</span>
+          <span class="mono">${r.val==null?'—':gbp(r.val)}${r.m<12&&r.val?` <small>→ ≈${gbp(r.ann)}/yr</small>`:''}</span></div>
+        <div class="track"><div class="fill${r.m<12?' part':''}" style="width:${r.ann? (r.ann/max*100).toFixed(1):0}%;background:${n.color}"></div></div>
+        <div class="yr-bot"><span>${r.val==null?'':gbp(r.val/r.m)+'/month'}</span>${delta}</div></div>`;
+    }
+    html += `</div>`;
+  }
+  const sh = document.getElementById('sheet');
+  sh.innerHTML = html; document.getElementById('scrim').hidden = false; sh.hidden = false;
+  document.getElementById('sheetX').onclick = closeCompare; document.getElementById('sheetX').focus();
+}
+function closeCompare(){ document.getElementById('sheet').hidden = true; document.getElementById('scrim').hidden = true; }
+document.getElementById('scrim').onclick = closeCompare;
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeCompare(); });
+
+// ── page ──
 function render(){
   const yrs = Object.keys(DATA.years).sort();
   if(!prefs.year || !DATA.years[prefs.year]) prefs.year = yrs.find(y=>DATA.years[y].months>=12 && y===String(new Date().getFullYear()-1)) || yrs[yrs.length-1];
-  const year = prefs.year, d = DATA.years[year], detail = prefs.detail;
-  document.getElementById('detail').checked = detail;
+  const year = prefs.year, d = DATA.years[year];
   document.getElementById('resetBtn').hidden = !usingImport;
   document.getElementById('src').textContent = DATA.source + '.';
-
   document.getElementById('yearTabs').innerHTML = yrs.map(y=>{
     const m = DATA.years[y].months;
     return `<button class="yr-tab${y===year?' active':''}" role="tab" aria-selected="${y===year}" data-y="${y}">${y}<span class="sub">${m>=12?'full year':'Jan–'+MON[m-1]}</span></button>`;
   }).join('');
   document.querySelectorAll('.yr-tab').forEach(b=>b.onclick=()=>{ prefs.year=b.dataset.y; savePrefs(); setTimeout(render,0); });
 
-  const g = build(d, detail), net = g.inTot - g.outTot;
-  const mort = total(d.out.Mortgage || 0);
+  const g = build(d), net = g.inTot - g.outTot, mort = total(d.out.Mortgage || 0);
   document.getElementById("stats").innerHTML = `
     <div class="stat"><span class="k">Money in</span><span class="v">${gbp(g.inTot)}</span><span class="s">${yearLabel(year,d.months)}</span></div>
     <div class="stat"><span class="k">Money out</span><span class="v">${gbp(g.outTot)}</span><span class="s">${Math.round(mort/g.outTot*100)}% on the mortgage</span></div>
     <div class="stat"><span class="k">Net</span><span class="v ${net<0?'neg':'pos'}">${net<0?'−':'+'}${gbp(Math.abs(net))}</span><span class="s">${net<0?'Spent more than came in':'Left in the account'}</span></div>`;
   document.getElementById("note").textContent = d.note || '';
-
-  const scroller = document.getElementById("scroller");
-  const W = Math.max(scroller.clientWidth, detail ? 900 : 560);
-  const H = Math.max(detail ? 640 : 420, g.nodes.length * (detail ? 19 : 26));
-  const svg = d3.select("#sankey").attr("width",W).attr("height",H).attr("viewBox",`0 0 ${W} ${H}`);
-  svg.selectAll("*").remove();
-  const graph = d3.sankey().nodeWidth(10).nodePadding(detail ? 9 : 12).nodeAlign(n => n.col).nodeSort(null)
-    .extent([[124, 14],[W - (detail ? 196 : 176), H - 14]])
-    ({nodes:g.nodes.map(n=>({...n})), links:g.links.map(l=>({...l}))});
-
-  svg.append("g").selectAll("path").data(graph.links).join("path")
-    .attr("class","link").attr("d", d3.sankeyLinkHorizontal())
-    .attr("stroke", l=>l.color).attr("stroke-width", l=>Math.max(1,l.width))
-    .on("pointermove",(ev,l)=>showTip(ev, `${clean(l.source.name)} → ${clean(l.target.name)}<br><b>${gbp(l.value)}</b> · ${(l.value/g.inTot*100).toFixed(1)}% of income`))
-    .on("pointerleave",hideTip);
-  const nd = svg.append("g").selectAll("g").data(graph.nodes).join("g");
-  nd.append("rect").attr("x",n=>n.x0).attr("y",n=>n.y0).attr("width",n=>n.x1-n.x0).attr("height",n=>Math.max(1,n.y1-n.y0))
-    .attr("rx",2).attr("fill",n=>n.color)
-    .on("pointermove",(ev,n)=>showTip(ev, `${clean(n.name)}<br><b>${gbp(n.value)}</b>`)).on("pointerleave",hideTip);
-  nd.append("text").attr("class",n=>"nlabel"+(n.col<=2?" big":""))
-    .attr("x", n => n.col===0 ? n.x0-8 : (n.col===1 ? (n.x0+n.x1)/2 : n.x1+8))
-    .attr("y", n => n.col===1 ? (n.y0 < 22 ? n.y1 + 16 : n.y0 - 6) : (n.y0+n.y1)/2)
-    .attr("dy", n => n.col===1 ? "0" : "0.35em")
-    .attr("text-anchor", n => n.col===0 ? "end" : (n.col===1 ? "middle" : "start"))
-    .each(function(n){
-      if ((n.y1-n.y0) < 3 && n.col===3) return;
-      const t = d3.select(this);
-      t.append("tspan").text(clean(n.name)+" ");
-      t.append("tspan").attr("class","amt").text(gbp(n.value));
-    });
+  drawChart(d, year);
 
   const fams = [...new Set(Object.keys(d.out).map(k=>CATS[k]||'home'))];
   document.getElementById("legend").innerHTML =
     `<span><i style="background:${css('--c-in')}"></i>Income</span>` +
     fams.map(f=>`<span><i style="background:${famColor(f)}"></i>${FAMLABEL[f]}</span>`).join("") +
     (net<0?`<span><i style="background:${css('--c-gap')}"></i>Drawn from balance</span>`:`<span><i style="background:${css('--c-left')}"></i>Left over</span>`);
-  renderTable(d, g);
+  renderTable(d, g, year);
 }
 
 const openCats = new Set();
-function renderTable(d, g){
+function renderTable(d, g, year){
   let h = `<thead><tr><th>Category</th><th>Amount</th><th>Per month</th><th>% of in</th></tr></thead><tbody>`;
   for (const [cat,v] of Object.entries(d.out).sort((a,b)=>total(b[1])-total(a[1]))){
     const t = total(v), multi = typeof v === "object", open = openCats.has(cat);
-    h += `<tr class="${multi?'cat':''}${open?' open':''}" data-cat="${cat}"><td><span class="sw" style="background:${famColor(CATS[cat]||'home')}"></span>${cat}</td><td>${gbp(t)}</td><td>${gbp(t/d.months)}</td><td>${(t/g.inTot*100).toFixed(1)}%</td></tr>`;
+    h += `<tr class="row" data-cat="${cat}"><td>${multi?`<button class="chev" data-toggle="${cat}" aria-expanded="${open}" aria-label="Show items">${open?'▾':'▸'}</button>`:'<span class="chev-sp"></span>'}<span class="sw" style="background:${famColor(CATS[cat]||'home')}"></span>${cat}</td><td>${gbp(t)}</td><td>${gbp(t/d.months)}</td><td>${(t/g.inTot*100).toFixed(1)}%</td></tr>`;
     if (multi && open) for (const [k,val] of Object.entries(v).sort((a,b)=>b[1]-a[1]))
-      h += `<tr class="sub"><td>${k}</td><td>${gbp(val)}</td><td>${gbp(val/d.months)}</td><td>${(val/g.inTot*100).toFixed(1)}%</td></tr>`;
+      h += `<tr class="row sub" data-cat="${cat}" data-item="${k}"><td>${k}</td><td>${gbp(val)}</td><td>${gbp(val/d.months)}</td><td>${(val/g.inTot*100).toFixed(1)}%</td></tr>`;
   }
   h += `</tbody><tfoot><tr><td>Total out</td><td>${gbp(g.outTot)}</td><td>${gbp(g.outTot/d.months)}</td><td>${(g.outTot/g.inTot*100).toFixed(1)}%</td></tr></tfoot>`;
   const tbl = document.getElementById("tbl"); tbl.innerHTML = h;
-  tbl.querySelectorAll('tr.cat').forEach(r=>r.onclick=()=>{ const c=r.dataset.cat; openCats.has(c)?openCats.delete(c):openCats.add(c); setTimeout(()=>renderTable(d,g),0); });
+  tbl.querySelectorAll('tr.row').forEach(r=>r.onclick=ev=>{
+    const tg = ev.target.closest('[data-toggle]');
+    if(tg){ const c = tg.dataset.toggle; openCats.has(c)?openCats.delete(c):openCats.add(c); setTimeout(()=>renderTable(d,g,year),0); return; }
+    const cat = r.dataset.cat, item = r.dataset.item, color = famColor(CATS[cat]||'home');
+    openCompare(item ? {name:item, color, ref:{t:'item',cat,item}} : {name:cat, color, ref:{t:'cat',cat}}, year);
+  });
 }
 
-document.getElementById('detail').onchange = e => { prefs.detail = e.target.checked; savePrefs(); render(); };
-let rt; window.addEventListener("resize",()=>{clearTimeout(rt); rt=setTimeout(render,150)});
+let rt, lastW = window.innerWidth; window.addEventListener("resize",()=>{ if(window.innerWidth===lastW) return; lastW=window.innerWidth; clearTimeout(rt); rt=setTimeout(render,150); });
 document.getElementById('versionBadge').textContent = `v${APP_VERSION}`;
 render();
 </script>
