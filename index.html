@@ -36,6 +36,8 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.5.1 — Year comparison labels get a small ▲/▼ % against the year before
+           (red = spent more, green = spent less; "new" if absent last year).
   v1.5.0 — One-off vs ongoing logic (isOneOff). Part years only pro-rate ongoing
            costs; one-off costs show as spent so far. One-off = category in
            ONE_OFF_CATS (Holidays, Home projects, Parties & weddings, Annual
@@ -82,7 +84,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.5.0</title>
+<title>Money Flow v1.5.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -184,6 +186,8 @@
   .c-list .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .c-list .am{font-size:10px; color:var(--paper-dim);}
   .c-list li.hl .nm, .c-list li.hl .am{font-weight:700; color:var(--paper);}
+  .c-list .ch{font-family:'Inter',sans-serif; font-size:8.5px; font-weight:700; margin-left:2px; white-space:nowrap;}
+  .c-list .ch.bad{color:var(--c-gap);} .c-list .ch.good{color:var(--today);} .c-list .ch.new, .c-list .ch.flat{color:var(--muted); font-weight:600;}
   .c-list li.none{display:block; color:var(--muted); font-size:10.5px;}
   .scrim{position:fixed; inset:0; background:rgba(38,49,63,.35); z-index:50;}
   .sheet{position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:min(560px,100%); max-height:82vh; overflow:auto; background:var(--surface); border-radius:18px 18px 0 0; padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px)); z-index:51; box-shadow:0 -8px 30px rgba(38,49,63,.18); display:grid; gap:12px;}
@@ -275,7 +279,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
@@ -649,8 +653,19 @@ function openCompare(n, year){
   const s = (PH - TOP - BOT - Math.max(0,maxParts-1)*GAP) / maxA;   // £ → px, shared by every year
 
   let html = `<div class="cmp-grid" style="grid-template-columns:repeat(${rows.length},minmax(0,1fr))">`;
-  for(const r of rows){
+  rows.forEach((r, ri) => {
     const me = r.y===year, part = r.D.months < 12, ap = r.pro ? '≈' : '';
+    // small ▲/▼ % per item against the year before (same pro-rating as the amounts)
+    const prev = ri > 0 ? new Map(rows[ri-1].parts.map(p=>[p.k, p.a])) : null;
+    const chg = p => {
+      if(!prev || p.k==='Other' || !rows[ri-1].focus) return '';
+      const b = prev.get(p.k);
+      if(!b) return `<span class="ch new">new</span>`;
+      const pct = (p.a - b) / b * 100;
+      if(Math.abs(pct) < 0.5) return `<span class="ch flat">0%</span>`;
+      const good = isIncome ? pct > 0 : pct < 0;
+      return `<span class="ch ${good?'good':'bad'}">${pct>0?'▲':'▼'}${Math.abs(pct).toFixed(0)}%</span>`;
+    };
     const range = part ? `Jan–${MON[r.D.months-1]}` : '';
     const how = !part ? 'Full year' : !r.pro ? `${range} · one-off, as spent` : r.anyOne ? `${range} · ongoing ×${+(12/r.D.months).toFixed(1)}, one-offs as spent` : `${range} ×${+(12/r.D.months).toFixed(1)}`;
     const soFar = sel && sel.D.months < 12 && sel.anyOne ? ' so far' : '';
@@ -667,11 +682,11 @@ function openCompare(n, year){
         <span class="c-delta">${delta || '&nbsp;'}</span></div>
       <div class="c-body">
       ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${r.y}</div>`}
-      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}"><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''}</span></li>`).join('')
+      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}"><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>`).join('')
         || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
       </div>
     </section>`;
-  }
+  });
   html += `</div>`;
   document.getElementById('cmpTitle').textContent = title;
   document.getElementById('cmpSub').textContent = (hl ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
