@@ -168,6 +168,7 @@
   .cmp-sub{margin:2px 0 0; font-size:12px; color:var(--paper-dim);}
   .cmp-grid{animation:cmpIn .28s ease both;}
   @keyframes cmpIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+  .c-list li.pick{cursor:pointer; border-radius:6px;} .c-list li.pick:hover, .c-list li.pick:focus-visible{background:var(--surface-2); outline:none;}
   .linkbtn{background:none; border:0; padding:0; font:inherit; color:var(--c-home); text-decoration:underline; text-underline-offset:2px; cursor:pointer;}
   .cmp-body{max-width:1180px; margin:0 auto; padding:12px 10px calc(28px + env(safe-area-inset-bottom,0px)); display:grid; gap:14px;}
   .cmp-grid{display:grid; column-gap:6px; grid-template-rows:auto auto;}
@@ -680,6 +681,8 @@ function openCompare(n, year){
     r.parts = keep.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
   });
 
+  const canPick = ref.t==='cat' && !only;   // in a category view every item can be tapped to compare just that item
+  const pickItem = k => openCompare({name:k, color:focusColor, ref:{t:'item', cat:ref.cat, item:k}}, year);
   const sel = rows.find(r=>r.y===year);
   const maxA = Math.max(...rows.map(r=>Math.max(r.fa||0, r.parts.reduce((s,p)=>s+p.a,0))), 1);
   const maxParts = Math.max(...rows.map(r=>r.parts.length), 0);
@@ -716,7 +719,7 @@ function openCompare(n, year){
         <span class="c-delta">${delta || '&nbsp;'}</span></div>
       <div class="c-body">
       ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${r.y}</div>`}
-      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}"><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>`).join('')
+      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>`).join('')
         || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
       </div>
     </section>`;
@@ -729,7 +732,11 @@ function openCompare(n, year){
   if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year); subEl.append(' · ', b); }
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
-  rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right'}); });
+  rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right', onItem: canPick ? pickItem : null}); });
+  if(canPick) body.querySelectorAll('.c-list li[data-item]').forEach(li => {
+    li.onclick = () => pickItem(li.dataset.item);
+    li.onkeydown = ev => { if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); pickItem(li.dataset.item); } };
+  });
   document.getElementById('cmpX').focus({preventScroll:true});
 }
 function drawPanel(el, r, o){
@@ -749,6 +756,7 @@ function drawPanel(el, r, o){
   svg.append('rect').attr('x',fx).attr('y',fy).attr('width',nw).attr('height',Math.max(1,fh)).attr('rx',2).attr('fill',o.focusColor);
   svg.append('g').selectAll('rect').data(parts).join('rect').attr('x',px).attr('y',p=>p.y0).attr('width',nw).attr('height',p=>p.y1-p.y0).attr('rx',2)
     .attr('fill', p=>o.color[p.k]).attr('fill-opacity', p=>dim(p.k)?.3:1);
+  if(o.onItem) svg.selectAll('path.link, rect').filter(p => p && p.k && p.k !== 'Other').style('cursor','pointer').on('click', (ev,p) => o.onItem(p.k));
 }
 function closeCompare(){ document.getElementById('cmp').hidden = true; document.body.style.overflow = ''; }
 document.getElementById('cmpX').onclick = closeCompare;
