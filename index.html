@@ -166,6 +166,9 @@
   .cmp-head{position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; align-items:flex-start; gap:10px; padding:calc(12px + env(safe-area-inset-top,0px)) 18px 10px; background:var(--bg); border-bottom:1px solid var(--line);}
   .cmp-head h3{margin:0; font-size:26px; font-weight:400; line-height:1.1;}
   .cmp-sub{margin:2px 0 0; font-size:12px; color:var(--paper-dim);}
+  .cmp-grid{animation:cmpIn .28s ease both;}
+  @keyframes cmpIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+  .linkbtn{background:none; border:0; padding:0; font:inherit; color:var(--c-home); text-decoration:underline; text-underline-offset:2px; cursor:pointer;}
   .cmp-body{max-width:1180px; margin:0 auto; padding:12px 10px calc(28px + env(safe-area-inset-bottom,0px)); display:grid; gap:14px;}
   .cmp-grid{display:grid; column-gap:6px; grid-template-rows:auto auto;}
   .col{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:8px 6px; display:grid; grid-row:span 2; grid-template-rows:subgrid; row-gap:8px; min-width:0;}
@@ -635,8 +638,8 @@ const proFactor = (D, cat, item) => D.months >= 12 || isOneOff(D, cat, item) ? 1
 
 const ITEM_COLORS = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#4a3aa7']; // fixed order, never cycled
 function openCompare(n, year){
-  let ref = n.ref || {}, hl = null;
-  if(ref.t==='item'){ hl = ref.item; ref = {t:'cat', cat:ref.cat}; }
+  let ref = n.ref || {}, hl = null, only = null;
+  if(ref.t==='item'){ hl = ref.item; if(!n.showAll) only = ref.item; ref = {t:'cat', cat:ref.cat}; }
   else if(ref.t==='other'){ ref = {t:'cat', cat:ref.cat}; }
   const title = ref.t==='cat' ? ref.cat : n.name;
   const focusColor = ref.t==='cat' ? famColor(CATS[ref.cat]||'home') : (n.color || css('--c-in'));
@@ -656,6 +659,12 @@ function openCompare(n, year){
     }
     const anyOne = parts.length ? parts.some(p=>!p.pro) : !pro;
     return {y, D, focus, fa, pro, anyOne, parts};
+  });
+  // Tapping a single item (e.g. Tesco) compares just that item year by year; the rest of its category is left out.
+  if(only) rows = rows.map(r => {
+    const parts = r.parts.filter(p => p.k === only), has = parts.length > 0;
+    return {...r, parts, focus: has ? parts.reduce((a,p)=>a+p.v,0) : null, fa: has ? parts.reduce((a,p)=>a+p.a,0) : null,
+            pro: parts.some(p=>p.pro), anyOne: has ? parts.some(p=>!p.pro) : false};
   });
   // Items get one colour each, the same in every year. The 7 biggest (over all years, plus any
   // highlighted item) get their own colour; the rest are folded into "Other".
@@ -713,8 +722,11 @@ function openCompare(n, year){
     </section>`;
   });
   html += `</div>`;
-  document.getElementById('cmpTitle').textContent = title;
-  document.getElementById('cmpSub').textContent = (hl ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
+  document.getElementById('cmpTitle').textContent = only || title;
+  document.querySelector('#cmp .eyebrow').textContent = only ? `Year by year · ${ref.cat}` : 'Year by year';
+  const subEl = document.getElementById('cmpSub');
+  subEl.textContent = (hl && !only ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
+  if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year); subEl.append(' · ', b); }
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
   rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right'}); });
