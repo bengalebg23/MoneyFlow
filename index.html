@@ -94,7 +94,7 @@
     --paper:#26313F; --paper-dim:#5b6b7d; --muted:#6b7a8c;
     --mustard:#2F6FE4; --mustard-dim:#1f4fb0; --rose:#F0703C; --today:#2FA84F;
     --c-home:#2a78d6; --c-food:#eb6834; --c-spend:#1baf7a; --c-kids:#e87ba4;
-    --c-trips:#eda100; --c-annual:#4a3aa7; --c-in:#8a97a8; --c-gap:#e34948; --c-left:#2FA84F;
+    --c-trips:#eda100; --c-annual:#4a3aa7; --c-in:#8a97a8; --c-top:#0ea5b7; --c-gap:#e34948; --c-left:#2FA84F;
     --radius:14px;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -398,6 +398,7 @@ function parseSantander(A){
     if(!useAnnual && lastM - filled > 2) continue; // a few stray months at the end of a year (e.g. an old part-year), not a usable year
     const val = r => useAnnual ? num(r[b-5]) : (()=>{ let s=0; for(let k=0;k<12;k++) s+=num(r[b+k]); return s; })();
     const inc = {"Ben":0,"Emily":0,"Child Benefit":0,"Other income":0}, out = {};
+    const pc = {Ben:{}, Emily:{}};   // each person's monthly payment cells, to tell the normal monthly payment from top-ups
     let section = '', lastPerson = '';
     const catTotal = {}; // annual-mode check totals per category
     const lumpy = {};    // items whose spend lands in one or two months (see isOneOff)
@@ -420,7 +421,7 @@ function parseSantander(A){
       }
       const v = Math.round(val(r));
       if(section==='income'){
-        if(lab==='Ben'||lab==='Emily'){ inc[lab] += v; lastPerson = lab; }
+        if(lab==='Ben'||lab==='Emily'){ inc[lab] += v; lastPerson = lab; for(let k=0;k<12;k++){ const x = Math.round(num(r[b+k])); if(x) (pc[lab][k] = pc[lab][k] || []).push(x); } }
         else if(/^(ben|emily) capex$/i.test(lab)){ const who = lab.split(' ')[0]; const k = who[0].toUpperCase()+who.slice(1).toLowerCase()+' (one-off)'; if(v>0) inc[k] = (inc[k]||0) + v; }
         else if(lab==='Gov') inc["Child Benefit"] += v; else inc["Other income"] += v;
       } else if(section==='Baseline'){
@@ -450,6 +451,25 @@ function parseSantander(A){
         if(T <= 0) delete out[cat];
         else if(Math.abs(S-T)/T > 0.1) out[cat] = T;
       }
+    }
+    // Split Ben / Emily into the normal monthly payment (£2,400 / £750 – their usual figure, once a month) and top-ups (everything else).
+    // "Usual figures" = amounts (≥£500) that recur in two or more months and are at least half the most common one (so a repeated £500 top-up isn't mistaken for it).
+    for(const who of ['Ben','Emily']){
+      const months = Object.values(pc[who]);
+      const freq = {}; months.forEach(cells => new Set(cells.filter(x=>x>=500)).forEach(x => freq[x] = (freq[x]||0)+1));
+      const top1 = Object.entries(freq).sort((p,q)=>q[1]-p[1] || q[0]-p[0])[0];
+      if(!top1) continue;
+      const usual = Object.keys(freq).map(Number).filter(x => freq[x] >= 2 && x >= +top1[0]/2);
+      let reg = 0;
+      for(const cells of months){
+        const hit = usual.filter(x => cells.includes(x));
+        const sum = cells.reduce((a,c)=>a+c,0);
+        const pick = hit.length ? Math.max(...hit) : Math.max(0, ...usual.filter(x => x <= sum));
+        reg += pick;
+      }
+      reg = Math.min(reg, inc[who]);
+      const top = inc[who] - reg; delete inc[who];
+      inc[who+' (regular)'] = reg; if(top > 0) inc[who+' (top-ups)'] = top;
     }
     for(const k of Object.keys(inc)) if(inc[k] <= 0) delete inc[k];
     if(!out.Mortgage && !Object.keys(inc).length) continue;
@@ -487,7 +507,8 @@ function build(d){
   const inTot = Object.values(d.income).reduce((a,b)=>a+b,0);
   const outTot = Object.values(d.out).reduce((a,v)=>a+total(v),0);
   const hub = node("Household pot", css("--paper-dim"), 1, {t:'hub'});
-  for (const [k,v] of Object.entries(d.income).sort((a,b)=>b[1]-a[1])) links.push({source:node(k,css("--c-in"),0,{t:'in',name:k}),target:hub,value:v,color:css("--c-in")});
+  const inColor = k => /top-ups/.test(k) ? css("--c-top") : css("--c-in");
+  for (const [k,v] of Object.entries(d.income).sort((a,b)=>b[1]-a[1])) links.push({source:node(k,inColor(k),0,{t:'in',name:k}),target:hub,value:v,color:inColor(k)});
   if (outTot > inTot) links.push({source:node("Drawn from balance",css("--c-gap"),0,{t:'gap'}),target:hub,value:outTot-inTot,color:css("--c-gap")});
   for (const [cat,v] of Object.entries(d.out).sort((a,b)=>total(b[1])-total(a[1]))){
     if (total(v) <= 0) continue;
@@ -629,7 +650,7 @@ function partsIn(ref, d){
 // category is lumpy by nature, it's a known seasonal item, or its spending pattern says so
 // (most of the year's spend landed in one or two months — the parser's "lumpy" check).
 const ONE_OFF_CATS = new Set(['Holidays','Home projects','Parties & weddings','Annual payments']);
-const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'Emily (one-off, April)']);
+const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'Emily (one-off, April)','Ben (one-off)','Emily (one-off)']);
 function isOneOff(D, cat, item){
   if(ONE_OFF_CATS.has(cat)) return true;
   if(item && ONE_OFF_ITEMS.has(item)) return true;
@@ -786,6 +807,7 @@ function render(){
   const fams = [...new Set(Object.keys(d.out).map(k=>CATS[k]||'home'))];
   document.getElementById("legend").innerHTML =
     `<span><i style="background:${css('--c-in')}"></i>Income</span>` +
+    (Object.keys(d.income).some(k=>/top-ups/.test(k)) ? `<span><i style="background:${css('--c-top')}"></i>Top-ups</span>` : '') +
     fams.map(f=>`<span><i style="background:${famColor(f)}"></i>${FAMLABEL[f]}</span>`).join("") +
     (net<0?`<span><i style="background:${css('--c-gap')}"></i>Drawn from balance</span>`:`<span><i style="background:${css('--c-left')}"></i>Left over</span>`);
   renderTable(d, g, year);
