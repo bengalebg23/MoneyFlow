@@ -169,6 +169,20 @@
   .cmp-grid{animation:cmpIn .28s ease both;}
   @keyframes cmpIn{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
   .c-list li.pick{cursor:pointer; border-radius:6px;} .c-list li.pick:hover, .c-list li.pick:focus-visible{background:var(--surface-2); outline:none;}
+  .ys-wrap{animation:cmpIn .28s ease both; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 8px 6px;}
+  .ys-svg{display:block; width:100%; overflow:visible;}
+  .ys-svg .seg, .ys-svg .rib{cursor:pointer; transition:opacity .15s;}
+  .ys-svg.dimming .seg:not(.on), .ys-svg.dimming .rib:not(.on){opacity:.12;}
+  .ys-svg text{font-family:'IBM Plex Mono',monospace; fill:var(--paper-dim);}
+  .ys-svg .yl{font-size:12px; font-weight:600; fill:var(--paper);} .ys-svg .yl.me{fill:var(--mustard);}
+  .ys-svg .tl{font-size:10px;}
+  .ys-svg .inl{font-size:9px; fill:var(--c-top);}
+  .ys-tbl{width:100%; border-collapse:collapse; margin-top:10px; font-size:11px;}
+  .ys-tbl th{font:600 10.5px 'IBM Plex Mono',monospace; color:var(--muted); text-align:right; padding:3px 4px; border-bottom:1px solid var(--line);} .ys-tbl th:first-child{text-align:left;}
+  .ys-tbl td{padding:5px 4px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:10.5px; white-space:nowrap;}
+  .ys-tbl td:first-child{text-align:left; font-family:'Inter',sans-serif; font-size:11.5px; white-space:normal;}
+  .ys-tbl tr.r{cursor:pointer;} .ys-tbl tr.r:hover, .ys-tbl tr.r.on{background:var(--surface-2);}
+  .ys-tbl i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px;}
   .linkbtn{background:none; border:0; padding:0; font:inherit; color:var(--c-home); text-decoration:underline; text-underline-offset:2px; cursor:pointer;}
   .cmp-body{max-width:1180px; margin:0 auto; padding:12px 10px calc(28px + env(safe-area-inset-bottom,0px)); display:grid; gap:14px;}
   .cmp-grid{display:grid; column-gap:6px; grid-template-rows:auto auto;}
@@ -250,6 +264,7 @@
   <div class="bar">
     <p class="src" id="zoomHint"></p>
     <div class="btns">
+      <button class="btn" id="yearsBtn">Compare all years</button>
       <button class="btn primary" id="loadBtn">Load spreadsheet</button>
       <button class="btn" id="resetBtn" hidden>Use built-in figures</button>
       <input type="file" id="fileIn" accept=".xlsx,.xlsm,.xls" hidden>
@@ -283,7 +298,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.6.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
@@ -659,7 +674,7 @@ function isOneOff(D, cat, item){
 const proFactor = (D, cat, item) => D.months >= 12 || isOneOff(D, cat, item) ? 1 : 12 / D.months;
 
 const ITEM_COLORS = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#4a3aa7']; // fixed order, never cycled
-function openCompare(n, year){
+function openCompare(n, year, fromYears){
   let ref = n.ref || {}, hl = null, only = null;
   if(ref.t==='item'){ hl = ref.item; if(!n.showAll) only = ref.item; ref = {t:'cat', cat:ref.cat}; }
   else if(ref.t==='other'){ ref = {t:'cat', cat:ref.cat}; }
@@ -703,7 +718,7 @@ function openCompare(n, year){
   });
 
   const canPick = ref.t==='cat' && !only;   // in a category view every item can be tapped to compare just that item
-  const pickItem = k => openCompare({name:k, color:focusColor, ref:{t:'item', cat:ref.cat, item:k}}, year);
+  const pickItem = k => openCompare({name:k, color:focusColor, ref:{t:'item', cat:ref.cat, item:k}}, year, fromYears);
   const sel = rows.find(r=>r.y===year);
   const maxA = Math.max(...rows.map(r=>Math.max(r.fa||0, r.parts.reduce((s,p)=>s+p.a,0))), 1);
   const maxParts = Math.max(...rows.map(r=>r.parts.length), 0);
@@ -750,7 +765,8 @@ function openCompare(n, year){
   document.querySelector('#cmp .eyebrow').textContent = only ? `Year by year · ${ref.cat}` : 'Year by year';
   const subEl = document.getElementById('cmpSub');
   subEl.textContent = (hl && !only ? `${hl} highlighted · ` : '') + 'all years drawn to the same scale' + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
-  if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year); subEl.append(' · ', b); }
+  if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year, fromYears); subEl.append(' · ', b); }
+  if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year); subEl.prepend(b, ' · '); }
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
   rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right', onItem: canPick ? pickItem : null}); });
@@ -760,6 +776,87 @@ function openCompare(n, year){
   });
   document.getElementById('cmpX').focus({preventScroll:true});
 }
+let yearsMode = 'out';
+const compact = v => v >= 9500 ? '£' + Math.round(v/1000) + 'k' : v >= 1000 ? '£' + (v/1000).toFixed(1) + 'k' : '£' + Math.round(v);
+function openYears(mode, year){
+  yearsMode = mode = mode || 'out';
+  const yrs = Object.keys(DATA.years).sort(), n = yrs.length;
+  const proTot = (D, kind) => Object.entries(kind==='out' ? D.out : D.income).reduce((t,[k,v]) => {
+    if(kind==='in') return t + v*proFactor(D,'income',k);
+    return t + (typeof v==='number' ? v*proFactor(D,k,null) : Object.entries(v).reduce((a,[i,x])=>a+x*proFactor(D,k,i),0)); }, 0);
+  const cols = yrs.map(y => {
+    const D = DATA.years[y], m = {};
+    if(mode==='out') for(const [cat,v] of Object.entries(D.out)){
+      const a = typeof v==='number' ? v*proFactor(D,cat,null) : Object.entries(v).reduce((t,[k,x])=>t+x*proFactor(D,cat,k),0);
+      if(a > 0) m[cat] = a; }
+    else for(const [k,v] of Object.entries(D.income)){ const a = v*proFactor(D,'income',k); if(a > 0) m[k] = a; }
+    return {y, D, m, tot:Object.values(m).reduce((a,b)=>a+b,0), other: proTot(D, mode==='out' ? 'in' : 'out')};
+  });
+  const sum = {}; cols.forEach(c => Object.entries(c.m).forEach(([k,a]) => sum[k] = (sum[k]||0) + a));
+  const keys = Object.keys(sum).sort((a,b)=>sum[b]-sum[a]);
+  const col = k => mode==='out' ? famColor(CATS[k]||'home') : (/top-ups/.test(k) ? css('--c-top') : css('--c-in'));
+  const refOf = k => mode==='out' ? {t:'cat', cat:k} : {t:'in', name:k};
+  const safe = k => k.replace(/"/g,'&quot;');
+
+  document.getElementById('cmpTitle').textContent = mode==='out' ? 'Where the money went' : 'Where the money came from';
+  document.querySelector('#cmp .eyebrow').textContent = 'Year by year · whole picture';
+  const subEl = document.getElementById('cmpSub');
+  subEl.textContent = 'Tap any block, flow or row to focus on it · same scale for every year' + (mode==='out' ? ' · dashed line = money in' : '') + (cols.some(c=>c.D.months<12) ? ' · part years ongoing-costs pro-rated (≈)' : '') + ' · ';
+  const sw = document.createElement('button'); sw.className = 'linkbtn'; sw.textContent = mode==='out' ? 'Show money in' : 'Show money out';
+  sw.onclick = () => openYears(mode==='out' ? 'in' : 'out', year); subEl.append(sw);
+
+  const body = document.getElementById('cmpBody');
+  body.innerHTML = `<div class="ys-wrap"><svg class="ys-svg" id="ysSvg"></svg>
+    <table class="ys-tbl"><thead><tr><th>${mode==='out'?'Category':'Source'}</th>${cols.map(c=>`<th>${c.y}</th>`).join('')}</tr></thead><tbody>
+    ${keys.map(k=>`<tr class="r" data-k="${safe(k)}" tabindex="0" role="button"><td><i style="background:${col(k)}"></i>${k}</td>${cols.map(c=>`<td>${c.m[k] ? compact(c.m[k]) : '–'}</td>`).join('')}</tr>`).join('')}
+    </tbody><tfoot><tr><td>Total</td>${cols.map(c=>`<td><b>${compact(c.tot)}</b></td>`).join('')}</tr></tfoot></table></div>`;
+  const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
+
+  const svgEl = document.getElementById('ysSvg');
+  const W = svgEl.parentNode.clientWidth - 16 || 340, TOP = 18, BOT = 26, GAP = 2;
+  const PH = Math.max(300, Math.min(window.innerHeight - 340, 520));
+  const barW = Math.min(64, Math.max(22, W / n * 0.5));
+  const maxT = Math.max(...cols.map(c=>Math.max(c.tot, c.other)), 1);
+  const s = (PH - Math.max(0, keys.length-1)*GAP) / maxT;
+  const H = TOP + PH + BOT;
+  const svg = d3.select(svgEl).attr('width', W).attr('viewBox', `0 0 ${W} ${H}`).attr('height', H);
+  const xs = cols.map((_,i) => n > 1 ? i*(W-barW)/(n-1) : 0);
+  // stack, tallest category first, with a small gap so each block reads separately
+  cols.forEach(c => { let y = TOP; c.seg = {}; keys.forEach(k => { if(!c.m[k]) return; const h = Math.max(1, c.m[k]*s); c.seg[k] = {y0:y, y1:y+h}; y += h + GAP; }); });
+  const gR = svg.append('g'), gB = svg.append('g'), gT = svg.append('g');
+  const ribbon = (x1, a, x2, b) => { const mx = (x1+x2)/2; return `M${x1},${a.y0}C${mx},${a.y0} ${mx},${b.y0} ${x2},${b.y0}L${x2},${b.y1}C${mx},${b.y1} ${mx},${a.y1} ${x1},${a.y1}Z`; };
+  const tipFor = (k, c) => `${k}<br><b>${gbp(c.m[k])}</b> in ${c.y}${c.D.months<12 ? ' (full-year equivalent)' : ''} · tap to focus`;
+  const pick = (k, y) => { hideTip(); openCompare({name:k, color:col(k), ref:refOf(k)}, y || year, true); };
+  for(let i = 0; i < n-1; i++) keys.forEach(k => {
+    const a = cols[i].seg[k], b = cols[i+1].seg[k]; if(!a || !b) return;
+    gR.append('path').attr('class','rib').attr('data-k',k).attr('d', ribbon(xs[i]+barW, a, xs[i+1], b)).attr('fill', col(k)).attr('fill-opacity', .28)
+      .on('pointermove', ev => showTip(ev, `${k}<br>${gbp(cols[i].m[k])} → ${gbp(cols[i+1].m[k])}<br>tap to focus`)).on('pointerleave', hideTip).on('click', () => pick(k, cols[i+1].y));
+  });
+  cols.forEach((c, i) => {
+    keys.forEach(k => { const g = c.seg[k]; if(!g) return;
+      gB.append('rect').attr('class','seg').attr('data-k',k).attr('x', xs[i]).attr('y', g.y0).attr('width', barW).attr('height', g.y1-g.y0).attr('rx', 2).attr('fill', col(k))
+        .on('pointermove', ev => showTip(ev, tipFor(k, c))).on('pointerleave', hideTip).on('click', () => pick(k, c.y));
+      if(g.y1-g.y0 >= 14 && barW >= 30) gB.append('text').attr('class','tl').attr('x', xs[i]+barW/2).attr('y', (g.y0+g.y1)/2).attr('dy','0.35em').attr('text-anchor','middle').style('fill','#fff').style('pointer-events','none').text(compact(c.m[k]));
+    });
+    gT.append('text').attr('class','tl').attr('x', xs[i]+barW/2).attr('y', TOP-5).attr('text-anchor','middle').text((c.D.months<12 ? '≈' : '') + compact(c.tot));
+    gT.append('text').attr('class','yl'+(c.y===year?' me':'')).attr('x', xs[i]+barW/2).attr('y', H-8).attr('text-anchor','middle').text(c.y);
+    if(mode==='out' && c.other > 0){   // dashed tick = what came in that year
+      const yy = TOP + Math.min(c.other*s, PH);
+      gT.append('line').attr('x1', xs[i]-4).attr('x2', xs[i]+barW+4).attr('y1', yy).attr('y2', yy).attr('stroke', css('--paper')).attr('stroke-dasharray','3 2').attr('stroke-width', 1.5).style('pointer-events','none');
+    }
+  });
+  // hover/focus highlight shared by blocks, flows and table rows
+  const light = k => { svg.classed('dimming', !!k); svg.selectAll('.seg,.rib').classed('on', function(){ return this.getAttribute('data-k') === k; });
+    body.querySelectorAll('tr.r').forEach(r => r.classList.toggle('on', r.dataset.k === k)); };
+  svg.selectAll('.seg,.rib').on('mouseenter.l', function(){ light(this.getAttribute('data-k')); }).on('mouseleave.l', () => light(null));
+  body.querySelectorAll('tr.r').forEach(r => {
+    r.onmouseenter = () => light(r.dataset.k); r.onmouseleave = () => light(null);
+    r.onclick = () => pick(r.dataset.k);
+    r.onkeydown = ev => { if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); pick(r.dataset.k); } };
+  });
+  document.getElementById('cmpX').focus({preventScroll:true});
+}
+document.getElementById('yearsBtn').onclick = () => openYears('out', prefs.year);
 function drawPanel(el, r, o){
   const W = el.clientWidth || el.parentNode.clientWidth, nw = 8;
   const svg = d3.select(el).attr('width', W).attr('viewBox', `0 0 ${W} ${el.getAttribute('height')}`);
