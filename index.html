@@ -298,12 +298,12 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 
 const CATS = { // category → colour family, in display order of the legend
-  "Mortgage":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Home projects":"home",
+  "Mortgage":"home","Mortgage overpayment":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Home projects":"home",
   "Food shop":"food","Everyday spending":"spend","Nursery":"kids","Kids' savings":"kids","Household savings":"home",
   "Holidays":"trips","Parties & weddings":"trips","Annual payments":"annual"
 };
@@ -447,8 +447,8 @@ function parseSantander(A){
         if(v>0) out["Household savings"] = (out["Household savings"]||0) + v;
         const cat = SECTION[section]; if(cat in catTotal) catTotal[cat] -= v;
       } else if(/^2nd mortgage/i.test(lab) && SECTION[section]){
-        // the 2nd mortgage row sits at the foot of the Holiday block on the sheet, but it is a mortgage payment, not a holiday
-        if(v>0) out.Mortgage = (out.Mortgage||0) + v;
+        // the 2nd mortgage row sits at the foot of the Holiday block on the sheet, but it is a lump-sum mortgage overpayment, not a holiday
+        if(v>0) out['Mortgage overpayment'] = (out['Mortgage overpayment']||0) + v;   // shown apart from the regular mortgage
         const cat = SECTION[section]; if(cat in catTotal) catTotal[cat] -= v;
       } else if(SECTION[section] && v>0 && lab!=='CAPEX'){
         const cat = SECTION[section], name = ALIAS[lab] || lab.replace(/\s+/g,' ');
@@ -664,7 +664,7 @@ function partsIn(ref, d){
 // (holidays, home projects…) are shown as actually spent so far. A cost is one-off if its
 // category is lumpy by nature, it's a known seasonal item, or its spending pattern says so
 // (most of the year's spend landed in one or two months — the parser's "lumpy" check).
-const ONE_OFF_CATS = new Set(['Holidays','Home projects','Parties & weddings','Annual payments']);
+const ONE_OFF_CATS = new Set(['Mortgage overpayment','Holidays','Home projects','Parties & weddings','Annual payments']);
 const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'Emily (one-off, April)','Ben (one-off)','Emily (one-off)']);
 function isOneOff(D, cat, item){
   if(ONE_OFF_CATS.has(cat)) return true;
