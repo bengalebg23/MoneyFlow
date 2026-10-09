@@ -342,7 +342,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.10';
+const APP_VERSION = '1.8.11';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1091,6 +1091,7 @@ function withAdds(F){
   return Object.assign({}, F, {assets, months:[...months].sort()});
 }
 const MORTGAGE = {asof:'9 Oct 2026', balance:208306, payment:1400, capital:515.53, interest:672.39, house:380000, houseNote:'your last valuation'};
+const PENSION = {asof:'9 Oct 2026', value:116069, paidIn:79554, growth:36515};
 const FF_FROM = '2026-03'; // accounts with a figure this recent are assumed unchanged until the next one
 function fullModel(){
   const F = withAdds(FULL), real = F.assets.filter(a => !a.memo);
@@ -1118,7 +1119,7 @@ function renderWorth(){
   const cashNow = M.at(M.latest, kids), later = M.latest > M.through;
   el.innerHTML = `
     <div class="stats">
-      <div class="stat"><span class="k">Net worth</span><span class="v">${signed(last.total)}</span><span class="s">${mLabel(lastM)}${kids?' · with kids’ savings':''}${lastM>='2026-10'?` · ${signed(last.total + MORTGAGE.house - MORTGAGE.balance)} with home equity`:''}</span></div>
+      <div class="stat"><span class="k">Net worth</span><span class="v">${signed(last.total)}</span><span class="s">${mLabel(lastM)}${kids?' · with kids’ savings':''}${lastM>='2026-10'?` · ${signed(last.total + MORTGAGE.house - MORTGAGE.balance)} with home equity · ${signed(last.total + MORTGAGE.house - MORTGAGE.balance + PENSION.value)} with pension`:''}</span></div>
       <div class="stat"><span class="k">Last 12 months</span><span class="v ${ch==null?'':ch<0?'neg':'pos'}">${ch==null?'—':(ch<0?'−':'+')+gbp(Math.abs(ch))}</span><span class="s">${yAgo?'since '+mLabel(ms[ms.length-13]):''}</span></div>
       <div class="stat"><span class="k">Peak</span><span class="v">${signed(pk.v)}</span><span class="s">${mLabel(ms[pk.i])}</span></div>
     </div>
@@ -1184,6 +1185,13 @@ function bigLine(a, months, color){
   const pk = vs.indexOf(Math.max(...vs));
   return `<svg class="big-line" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${pos.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="2"/><circle cx="${pos[pk][0]}" cy="${pos[pk][1]}" r="3.5" fill="${color}"/></svg>`;
 }
+function pensionHtml(){
+  const p = PENSION, gs = p.growth/p.value*100;
+  return `<section class="as-sec"><div class="as-head"><i style="background:${css('--c-annual')}"></i><h3>Pension</h3><span class="mono">${gbp(p.value)}</span></div>
+    <p class="note" style="margin:6px 0">As at ${p.asof}. Not counted in the totals above, since you can’t spend it yet.</p>
+    <div class="m-split"><i style="width:${(100-gs).toFixed(1)}%;background:${css('--c-in')}"></i><i style="width:${gs.toFixed(1)}%;background:${css('--c-left')}"></i></div>
+    <div class="facts"><span>Paid in <b>${gbp(p.paidIn)}</b> (${Math.round(100-gs)}%)</span><span>Growth <b>${gbp(p.growth)}</b> (${Math.round(gs)}%)</span><span>Growth on what you paid in <b>${Math.round(p.growth/p.paidIn*100)}%</b></span></div></section>`;
+}
 function mortgageHtml(){
   const m = MORTGAGE, core = m.capital + m.interest, extra = m.payment - core, r = m.interest / m.balance, pct = (r*1200).toFixed(2);
   const yrs = core > m.interest ? Math.log(1 - m.interest/core) / -Math.log(1 + r) / 12 : null;
@@ -1243,6 +1251,7 @@ function renderAssets(){
       <span class="note" style="margin:0">Tap an account for its history${mode==='latest'?'. Each account shows its latest figure; the date is shown where it’s older':''}.</span></div>
     ${order.map(sec).join('')}
     ${memo.length ? `<section class="as-sec"><div class="as-head"><i style="background:${css('--c-in')}"></i><h3>Not counted</h3></div><ul class="as-list">${memo.map(r => rowHtml(r, 1, 'Cash', !live(r))).join('')}</ul><p class="note">Borrowed money from the 2nd mortgage while the extension was built, so it isn’t treated as an asset.</p></section>` : ''}
+    ${pensionHtml()}
     ${mortgageHtml()}
     <p class="note">Built from the Full Summary sheet. Accounts marked “not in sheet total” are ones your own total leaves out; they are included here so the list is complete.</p>`;
   document.getElementById('asofSel').onchange = e => { prefs.asof = e.target.value; savePrefs(); renderAssets(); };
