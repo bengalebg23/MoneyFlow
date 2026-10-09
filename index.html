@@ -273,6 +273,7 @@
   .as-main .bar-sh{grid-area:bar; height:4px; background:var(--line); border-radius:2px; overflow:hidden;} .as-main .bar-sh i{display:block; height:100%;}
   .nc{font-style:normal; font-size:10.5px; color:var(--paper-dim); border:1px solid var(--line); border-radius:6px; padding:0 5px; margin-left:4px;}
   .as-det{padding:0 0 10px;} .big-line{width:100%; height:120px; display:block;} .facts{display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12px; color:var(--paper-dim);}
+  .pen-chart{display:block; width:100%; height:auto;}
   .m-split{display:flex; height:8px; border-radius:4px; overflow:hidden; margin:6px 0;} .m-split i{display:block; height:100%;}
   #assetsView .neg, #assetsView .as-main .chg.neg, #assetsView .as-main .chg.pos{color:var(--paper-dim);}
   #assetsView .as-main .chg{font-size:10.5px; opacity:.8;}
@@ -342,7 +343,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.11';
+const APP_VERSION = '1.8.12';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1092,6 +1093,24 @@ function withAdds(F){
 }
 const MORTGAGE = {asof:'9 Oct 2026', balance:208306, payment:1400, capital:515.53, interest:672.39, house:380000, houseNote:'your last valuation'};
 const PENSION = {asof:'9 Oct 2026', value:116069, paidIn:79554, growth:36515};
+// Known pension totals (Royal London + the two Aviva pots, Aviva held flat after Feb 2024) with straight-line estimates between them.
+const PEN_PTS = [['2021-12',36332],['2022-06',39019],['2023-09',49557],['2025-08',80496],['2026-10',116069]];
+function penSeries(){
+  const mi = m => { const [y,mm] = m.split('-'); return +y*12 + +mm - 1; }, lbl = i => `${Math.floor(i/12)}-${String(i%12+1).padStart(2,'0')}`, out = [];
+  for(let k=0;k<PEN_PTS.length-1;k++){ const a = mi(PEN_PTS[k][0]), b = mi(PEN_PTS[k+1][0]);
+    for(let i=a;i<(k===PEN_PTS.length-2?b+1:b);i++) out.push([lbl(i), PEN_PTS[k][1] + (PEN_PTS[k+1][1]-PEN_PTS[k][1])*(i-a)/(b-a), PEN_PTS.some(p=>p[0]===lbl(i))]); }
+  return out;
+}
+function pensionChart(){
+  const S = penSeries(), W = 520, H = 150, L = 40, R = 8, T = 10, B = 20, n = S.length, hi = Math.max(...S.map(p=>p[1])) * 1.05;
+  const x = i => L + (W-L-R) * i/(n-1), y = v => T + (1 - v/hi) * (H-T-B);
+  const line = S.map((p,i) => `${i?'L':'M'}${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ');
+  const ticks = [0, .5, 1].map(f => hi*f/1.05).map(v => `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}" stroke-width=".6"/><text x="${L-5}" y="${y(v)}" dy="0.32em" text-anchor="end" class="ax">${v?compact(v):'£0'}</text>`).join('');
+  const yrs = S.map((p,i) => p[0].endsWith('-01') ? `<text x="${x(i)}" y="${H-5}" text-anchor="middle" class="ax">${p[0].slice(0,4)}</text>` : '').join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="pen-chart" role="img" aria-label="Pension value over time">${ticks}${yrs}
+    <path d="${line} L${x(n-1)},${y(0)} L${x(0)},${y(0)} Z" fill="${css('--c-annual')}" fill-opacity=".14"/><path d="${line}" fill="none" stroke="${css('--c-annual')}" stroke-width="2"/>
+    ${S.map((p,i) => p[2] ? `<circle cx="${x(i)}" cy="${y(p[1])}" r="3.5" fill="${css('--c-annual')}"/>` : '').join('')}</svg>`;
+}
 const FF_FROM = '2026-03'; // accounts with a figure this recent are assumed unchanged until the next one
 function fullModel(){
   const F = withAdds(FULL), real = F.assets.filter(a => !a.memo);
@@ -1129,6 +1148,8 @@ function renderWorth(){
       <svg id="wSvg" role="img" aria-label="Net worth over time, stacked by cash, savings and investments"></svg>
       <div id="wRead" class="w-read"></div>
     </div>
+    <h2>Pension</h2>
+    <div class="card w-card">${pensionChart()}<p class="note" style="margin:2px 0 0">Not in the net worth above. Dots are known values (${gbp(PEN_PTS[PEN_PTS.length-1][1])} today); the line between them is an estimate.</p></div>
     <h2>Year by year</h2>
     <div class="tbl-wrap"><table class="w-tbl"><thead><tr><th>As at</th><th>Cash</th><th>Savings</th><th>Invest.</th><th>Card</th><th>Student loan</th><th>Other debts</th><th>Net worth</th><th>Change</th></tr></thead><tbody id="wTbl"></tbody></table></div>
     <p class="note">${later ? `Savings and investments are only filled in on the sheet up to ${mLabel(M.through)}, so the chart stops there. ` : ''}Kids’ savings are left out unless you tick the box. This differs a little from the totals on your sheet: it leaves out the children’s money held in the Santander account, nets off loans, and counts the regular saver in every month. The 2nd-mortgage cash held in 2022–23 is borrowed, so it isn’t counted. “Free after pots” is your sheet’s own figure after earmarked pots and the £4,000 emergency fund. The student loan is rebuilt from your student loan sheet and the payments. Pensions, the house and the mortgage aren’t in the chart.</p>`;
@@ -1190,6 +1211,7 @@ function pensionHtml(){
   return `<section class="as-sec"><div class="as-head"><i style="background:${css('--c-annual')}"></i><h3>Pension</h3><span class="mono">${gbp(p.value)}</span></div>
     <p class="note" style="margin:6px 0">As at ${p.asof}. Not counted in the totals above, since you can’t spend it yet.</p>
     <div class="m-split"><i style="width:${(100-gs).toFixed(1)}%;background:${css('--c-in')}"></i><i style="width:${gs.toFixed(1)}%;background:${css('--c-left')}"></i></div>
+    ${pensionChart()}<p class="note" style="margin:2px 0 6px">Dots are values from your pension sheet and today’s figure. The line between them is an estimate.</p>
     <div class="facts"><span>Paid in <b>${gbp(p.paidIn)}</b> (${Math.round(100-gs)}%)</span><span>Growth <b>${gbp(p.growth)}</b> (${Math.round(gs)}%)</span><span>Growth on what you paid in <b>${Math.round(p.growth/p.paidIn*100)}%</b></span></div></section>`;
 }
 function mortgageHtml(){
