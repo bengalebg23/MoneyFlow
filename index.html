@@ -343,7 +343,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.13';
+const APP_VERSION = '1.8.14';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -389,7 +389,7 @@ const BUILTIN_DATA = {
    "Annual payments":{"Home insurance":184,"Emily's glasses":145,"Amazon Prime":113,"Disney+":100,"Amazon Photos":89,"Garden bin":60}
   }, note:""},
  "2026":{months:6,
-  income:{"Ben":13981,"Emily":5300,"Emily (one-off, April)":13123,"Child Benefit":633,"Other income":181},
+  income:{"Ben":13981,"Emily":5300,"Emily (one-off, April)":13123,"Child Benefit":633,"Other income":181,"Reuben top-up (external, not in bank)":345},
   out:{
    "Mortgage":8400,"Council Tax":627,"Energy":500,
    "Bills & subs":{"Water":386,"Vodafone":182,"Stocked":114,"Life insurance":96,"Netflix":95,"Spotify":65,"Washing machine":35,"Account fee":18},
@@ -438,7 +438,7 @@ const famColor = f => css("--c-"+f);
 // ── xlsx import ──
 const ALIAS = {"AMZ":"Amazon","BD / Anniversary":"Birthdays & anniv.","Xmas":"Christmas","Treat Yo'self":"Treat yo'self","MISC":"Misc",
   "House":"House bits","Bens Phone":"Ben's phone","Aviva Life Ins":"Life insurance","Vodaphone":"Vodafone","spotify":"Spotify",
-  "Wash machine":"Washing machine","Now Tv":"Now TV","TESCO":"Tesco","CC / Waitrose":"Co-op / Waitrose","Reuben Savings":"Reuben",
+  "Wash machine":"Washing machine","Now Tv":"Now TV","TESCO":"Tesco","CC / Waitrose":"Co-op / Waitrose","Reuben Savings":"Reuben","Reuben Savings (incl. 69 external)":"Reuben",
   "Vivien Savings":"Vivien","Disney":"Disney+","house Ins":"Home insurance","General dec":"Decorating","AC Unit":"AC unit",
   "mortgage":"Mortgage fee","Xmas tree":"Christmas tree","broken toilet":"Toilet repair","driveway":"Driveway","clothes":"Clothes",
   "garden bin":"Garden bin","Emily Glasses":"Emily's glasses","Trips Out":"Trips out","Eating Out":"Eating out"};
@@ -501,7 +501,11 @@ function parseSantander(A){
       if(section==='income'){
         if(lab==='Ben'||lab==='Emily'){ inc[lab] += v; lastPerson = lab; for(let k=0;k<12;k++){ const x = Math.round(num(r[b+k])); if(x) (pc[lab][k] = pc[lab][k] || []).push(x); } }
         else if(/^(ben|emily) capex$/i.test(lab)){ const who = lab.split(' ')[0]; const k = who[0].toUpperCase()+who.slice(1).toLowerCase()+' (one-off)'; if(v>0) inc[k] = (inc[k]||0) + v; }
-        else if(lab==='Gov') inc["Child Benefit"] += v; else inc["Other income"] += v;
+        else if(lab==='Gov') inc["Child Benefit"] += v;
+        else if(/\b(\d+) external/i.test(lab)){ // e.g. "Rebates (incl. 69 external Reuben top-up)": a fixed monthly amount paid in from outside the bank statements
+          const N = +lab.match(/(\d+) external/i)[1]; let n = 0; for(let k=0;k<12;k++) if(num(r[b+k]) >= N) n++;
+          const ext = Math.min(v, N*n); if(ext > 0) inc["Reuben top-up (external, not in bank)"] = (inc["Reuben top-up (external, not in bank)"]||0) + ext; inc["Other income"] += v - ext; }
+        else inc["Other income"] += v;
       } else if(section==='Baseline'){
         if(BASE[lab] && v>0) out[BASE[lab]] = v;
         if(BASE_CAT[lab]) catTotal[BASE_CAT[lab]] = v;
