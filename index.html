@@ -274,6 +274,13 @@
   .nc{font-style:normal; font-size:10.5px; color:var(--paper-dim); border:1px solid var(--line); border-radius:6px; padding:0 5px; margin-left:4px;}
   .as-det{padding:0 0 10px;} .big-line{width:100%; height:120px; display:block;} .facts{display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12px; color:var(--paper-dim);}
   .m-split{display:flex; height:8px; border-radius:4px; overflow:hidden; margin:6px 0;} .m-split i{display:block; height:100%;}
+  #assetsView .neg, #assetsView .as-main .chg.neg, #assetsView .as-main .chg.pos{color:var(--paper-dim);}
+  #assetsView .as-main .chg{font-size:10.5px; opacity:.8;}
+  #assetsView .stat.soft{background:transparent; box-shadow:none;} #assetsView .stat.soft .v{font-size:15px; font-weight:500; color:var(--paper-dim);}
+  #assetsView .as-sec .as-head i{opacity:.55;} #assetsView .as-main .bar-sh i{opacity:.55;}
+  #assetsView .as-head .mono{font-weight:500;}
+  #assetsView .as-debts .bar-sh{display:none;} #assetsView .as-debts .spark polyline{stroke:var(--muted);} #assetsView .as-debts .as-main .am{font-weight:500; color:var(--paper-dim);} #assetsView .as-debts .as-head h3{font-weight:500;}
+  #assetsView .m-split{opacity:.4; height:5px;} #assetsView .as-sec:last-of-type .as-head .mono, #assetsView .as-debts .as-head .mono{color:var(--paper-dim);}
   .as-gone summary{font-size:12px; color:var(--paper-dim); padding:6px 0; cursor:pointer;} .spark{display:block;}
   .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--paper); color:#fff; padding:9px 14px; border-radius:10px; font-size:13px; z-index:40; max-width:90vw;}
   @media (max-width:520px){ .stats{grid-template-columns:1fr 1fr;} .stats .stat:last-child{grid-column:1/-1;} }
@@ -335,7 +342,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.8';
+const APP_VERSION = '1.8.10';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1207,7 +1214,7 @@ function renderAssets(){
   const sec = g => { const rs = rows.filter(r => r.a.group===g && !r.a.memo); const lv = rs.filter(live).sort((x,y) => Math.abs(y.v)-Math.abs(x.v)), gone = rs.filter(r => !live(r) && r.k);
     if(!lv.length && !gone.length) return '';
     const gt = lv.reduce((s,r) => s + r.v, 0), base = g==='Liabilities' ? 0 : (g===FS_KIDS ? kidsT : mine) || 1;
-    return `<section class="as-sec"><div class="as-head"><i style="background:${gColor(g)}"></i><h3>${g==='Liabilities'?'Debts':g}</h3><span class="mono">${signed(gt)}</span>${g!=='Liabilities' && g!==FS_KIDS ? `<span class="pct">${Math.round(gt/mine*100)}%</span>` : ''}</div>
+    return `<section class="as-sec${g==='Liabilities'?' as-debts':''}"><div class="as-head"><i style="background:${gColor(g)}"></i><h3>${g==='Liabilities'?'Debts':g}</h3><span class="mono">${signed(gt)}</span>${g!=='Liabilities' && g!==FS_KIDS ? `<span class="pct">${Math.round(gt/mine*100)}%</span>` : ''}</div>
       ${g===FS_KIDS?'<p class="note" style="margin:0 0 6px">Held for the children, so not counted in your net worth.</p>':''}
       <ul class="as-list">${lv.map(r => rowHtml(r, base, g)).join('')}</ul>
       ${gone.length ? `<details class="as-gone"><summary>${gone.length} closed, empty or not updated recently</summary><ul class="as-list">${gone.map(r => rowHtml(r, 1, g, true)).join('')}</ul></details>` : ''}</section>`; };
@@ -1229,7 +1236,7 @@ function renderAssets(){
   el.innerHTML = `
     <div class="stats">
       <div class="stat"><span class="k">Assets</span><span class="v">${gbp(mine)}</span><span class="s">cash, savings, investments</span></div>
-      <div class="stat"><span class="k">Debts</span><span class="v ${debts<0?'neg':''}">${debts?signed(debts):'£0'}</span><span class="s">${debtSplit}</span></div>
+      <div class="stat soft"><span class="k">Debts</span><span class="v">${debts?gbp(-debts):'£0'}</span><span class="s">${debtSplit}</span></div>
       <div class="stat"><span class="k">Net worth</span><span class="v">${signed(mine+debts)}</span><span class="s">${mode==='latest'?'latest known':mLabel(mode)}</span></div>
     </div>
     <div class="as-bar"><label>As at <select id="asofSel"><option value="latest"${mode==='latest'?' selected':''}>Latest known</option>${[...M.months].reverse().map(m=>`<option value="${m}"${m===mode?' selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
