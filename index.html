@@ -343,7 +343,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.12';
+const APP_VERSION = '1.8.13';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -396,7 +396,7 @@ const BUILTIN_DATA = {
    "Food shop":{"ASDA":2510,"Aldi":404,"Tesco":281,"Co-op / Waitrose":88},
    "Everyday spending":{"Amazon":920,"Misc":548,"Clothes":476,"Eating out":282,"Takeaway":261,"Vivien":173,"Reuben":167,"House bits":120,"Trips out":114,"Christmas":70,"School":62,"Birthdays & anniv.":51,"Tennis":14,"Cash":10},
    "Nursery":605,
-   "Kids' savings":{"Vivien":425,"Reuben":80},
+   "Kids' savings":{"Vivien":425,"Reuben":425},
    "Home projects":{"Driveway":11761,"Decorating":195},
    "Holidays":{"Algarve":1766,"Holland":1346,"Devon camping":1317,"Ironbridge":326},
    "Annual payments":{"Amazon Prime":95}
@@ -1069,9 +1069,13 @@ const mLabel = m => { const [y,mm] = m.split('-'); return MON[+mm-1] + ' ' + y; 
 const gColor = g => ({Cash:css('--c-home'), Savings:css('--c-spend'), Investments:css('--c-annual'), Liabilities:css('--c-gap'), [FS_KIDS]:css('--c-kids')}[g] || css('--c-in'));
 const signed = v => (v<0 ? '−' : '') + gbp(Math.abs(v));
 // Balances read from bank screenshots and the NatWest Invest CSV (2 Oct 2026); the sheet wins wherever it has a figure.
+const KIDS_RUN = start => { const o = {}; for(let i=1;i<=10;i++) o['2026-'+String(i).padStart(2,'0')] = start + 85*i; return o; };
 const ADDS = {
   'nw-rew':{'2026-04':50,'2026-05':38,'2026-06':26,'2026-07':14,'2026-08':2,'2026-09':5,'2026-10':3},
   'nw-reg':{'2026-04':833,'2026-05':987.35,'2026-06':0,'2026-07':150.9,'2026-08':301.12,'2026-09':151.9,'2026-10':52.6},
+  'nsi':{'2026-04':250,'2026-05':250,'2026-06':250,'2026-07':250,'2026-08':250,'2026-09':250,'2026-10':250},
+  // kids' accounts: last sheet figure (Dec 2025) plus the £85 each child gets every month
+  'reu-edge':KIDS_RUN(9172), 'viv':KIDS_RUN(3310),
   'cc':{'2026-07':-18.99,'2026-08':-18.99,'2026-09':-31.99,'2026-10':-31.99},
   'nwi5':{'2026-04':13484,'2026-05':14498,'2026-06':15593,'2026-07':15092,'2026-08':15883,'2026-09':16811,'2026-10':16960.72}
 };
@@ -1080,7 +1084,7 @@ const STUDENT = {id:'student', name:'Student loan', group:'Liabilities', counted
 // Replaces sheet figures that were left flat: from Jul 2025 the sheet shows Invest 5 at £11,155 (it looks like Invest 3 was still counted),
 // but the fund's own transaction history shows only £6.5k bought in March 2025 plus small top-ups. Value = units held × interpolated unit price.
 const OVR = {'nwi5':{'2025-07':7029,'2025-08':7495,'2025-09':8137,'2025-10':8662,'2025-11':10319,'2025-12':10934}};
-const NOTES = {'nwi5':'Jul–Dec 2025 rebuilt from the fund’s transaction history (units held × unit price). The sheet had £11,155 flat for those months, which doesn’t match the money actually paid in.'};
+const NOTES = {'reu-edge':'From January 2026 this is the December figure plus £85 a month (your sheet stops at December 2025).','viv':'From January 2026 this is the December figure plus £85 a month (your sheet stops at December 2025).','nwi5':'Jul–Dec 2025 rebuilt from the fund’s transaction history (units held × unit price). The sheet had £11,155 flat for those months, which doesn’t match the money actually paid in.'};
 function withAdds(F){
   const months = new Set(F.months);
   const assets = F.assets.map(a => { const add = ADDS[a.id], ovr = OVR[a.id]; if(!add && !ovr) return a; const series = Object.assign({}, a.series);
@@ -1272,7 +1276,6 @@ function renderAssets(){
     <div class="as-bar"><label>As at <select id="asofSel"><option value="latest"${mode==='latest'?' selected':''}>Latest known</option>${[...M.months].reverse().map(m=>`<option value="${m}"${m===mode?' selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
       <span class="note" style="margin:0">Tap an account for its history${mode==='latest'?'. Each account shows its latest figure; the date is shown where it’s older':''}.</span></div>
     ${order.map(sec).join('')}
-    ${memo.length ? `<section class="as-sec"><div class="as-head"><i style="background:${css('--c-in')}"></i><h3>Not counted</h3></div><ul class="as-list">${memo.map(r => rowHtml(r, 1, 'Cash', !live(r))).join('')}</ul><p class="note">Borrowed money from the 2nd mortgage while the extension was built, so it isn’t treated as an asset.</p></section>` : ''}
     ${pensionHtml()}
     ${mortgageHtml()}
     <p class="note">Built from the Full Summary sheet. Accounts marked “not in sheet total” are ones your own total leaves out; they are included here so the list is complete.</p>`;
