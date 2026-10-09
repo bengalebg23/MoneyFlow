@@ -335,7 +335,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.6';
+const APP_VERSION = '1.8.7';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1069,11 +1069,17 @@ const ADDS = {
 };
 const STUDENT = {id:'student', name:'Student loan', group:'Liabilities', counted:false, memo:false, series:{"2021-09":-14497.5,"2021-10":-14347.58,"2021-11":-14197.67,"2021-12":-14047.75,"2022-01":-13897.83,"2022-02":-13747.92,"2022-03":-13598.0,"2022-04":-13364.0,"2022-05":-13130.0,"2022-06":-12896.0,"2022-07":-12662.0,"2022-08":-12428.0,"2022-09":-12194.0,"2022-10":-11960.0,"2022-11":-11726.0,"2022-12":-11492.0,"2023-01":-11258.0,"2023-02":-11024.0,"2023-03":-10790.0,"2023-04":-10599.86,"2023-05":-10409.71,"2023-06":-10219.57,"2023-07":-10029.43,"2023-08":-9839.29,"2023-09":-9649.14,"2023-10":-9459.0,"2023-11":-9254.75,"2023-12":-9050.5,"2024-01":-8846.25,"2024-02":-8642.0,"2024-03":-8437.75,"2024-04":-8233.5,"2024-05":-8029.25,"2024-06":-7825.0,"2024-07":-7579.89,"2024-08":-7334.78,"2024-09":-7089.67,"2024-10":-6844.56,"2024-11":-6599.44,"2024-12":-6354.33,"2025-01":-6109.22,"2025-02":-5864.11,"2025-03":-5619.0,"2025-04":-5401.73,"2025-05":-5220.86,"2025-06":-5024.15,"2025-07":-4810.91,"2025-08":-4596.8,"2025-09":-4381.8,"2025-10":-4165.91,"2025-11":-3949.13,"2025-12":-3731.45,"2026-01":-3516.37,"2026-02":-3300.4,"2026-03":-3083.54,"2026-04":-2865.78,"2026-05":-2647.13,"2026-06":-2660.56,"2026-07":-2432.04,"2026-08":-2202.58,"2026-09":-1972.16,"2026-10":-1982.8},
   note:'Balances from your student loan sheet (2021–Mar 2025), then rolled forward: salary deductions to May 2026 and the £242 direct debit from July 2026, landing on £1,982.80 on 9 Oct 2026. Months between known balances are estimates. About 8 payments of £242 remain, so roughly June 2027.'};
+// Replaces sheet figures that were left flat: from Jul 2025 the sheet shows Invest 5 at £11,155 (it looks like Invest 3 was still counted),
+// but the fund's own transaction history shows only £6.5k bought in March 2025 plus small top-ups. Value = units held × interpolated unit price.
+const OVR = {'nwi5':{'2025-07':7029,'2025-08':7495,'2025-09':8137,'2025-10':8662,'2025-11':10319,'2025-12':10934}};
+const NOTES = {'nwi5':'Jul–Dec 2025 rebuilt from the fund’s transaction history (units held × unit price). The sheet had £11,155 flat for those months, which doesn’t match the money actually paid in.'};
 function withAdds(F){
   const months = new Set(F.months);
-  const assets = F.assets.map(a => { const add = ADDS[a.id]; if(!add) return a; const series = Object.assign({}, a.series);
+  const assets = F.assets.map(a => { const add = ADDS[a.id], ovr = OVR[a.id]; if(!add && !ovr) return a; const series = Object.assign({}, a.series);
+    if(ovr) for(const [m,v] of Object.entries(ovr)){ series[m] = v; months.add(m); }
+    if(!add) return Object.assign({}, a, {series, note:NOTES[a.id]});
     for(const [m,v] of Object.entries(add)){ if(series[m]==null){ series[m] = v; months.add(m); } }
-    return Object.assign({}, a, {series}); });
+    return Object.assign({}, a, {series, note:NOTES[a.id]}); });
   if(!assets.some(a => a.id==='student')){ assets.push(STUDENT); Object.keys(STUDENT.series).forEach(m => months.add(m)); }
   return Object.assign({}, F, {assets, months:[...months].sort()});
 }
