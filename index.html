@@ -335,7 +335,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.7';
+const APP_VERSION = '1.8.8';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1094,10 +1094,10 @@ function fullModel(){
   const through = invMonths.length ? invMonths[invMonths.length-1] : all[all.length-1];
   const months = all.filter(m => m <= through);
   const lastKeys = new Map(real.map(a => [a, Object.keys(a.series).filter(k => a.series[k]!=null).sort().pop()]));
-  const at = (m, kids) => { const o = {Cash:0, Savings:0, Investments:0, Liabilities:0, [FS_KIDS]:0};
+  const at = (m, kids) => { const o = {Cash:0, Savings:0, Investments:0, Liabilities:0, card:0, student:0, otherDebt:0, [FS_KIDS]:0};
     real.forEach(a => { if(a.group===FS_KIDS && !kids) return; let v = a.series[m];
       if(v==null){ const lk = lastKeys.get(a); if(lk && lk >= FF_FROM && m > lk) v = a.series[lk]; }
-      o[a.group] += v || 0; });
+      o[a.group] += v || 0; if(a.id==='cc') o.card += v || 0; else if(a.id==='student') o.student += v || 0; else if(a.group==='Liabilities') o.otherDebt += v || 0; });
     o.total = o.Cash + o.Savings + o.Investments + o.Liabilities + (kids ? o[FS_KIDS] : 0); return o; };
   return {F, real, months, through, all, latest: all[all.length-1], at};
 }
@@ -1122,13 +1122,13 @@ function renderWorth(){
       <div id="wRead" class="w-read"></div>
     </div>
     <h2>Year by year</h2>
-    <div class="tbl-wrap"><table class="w-tbl"><thead><tr><th>As at</th><th>Cash</th><th>Savings</th><th>Invest.</th><th>Debts</th><th>Net worth</th><th>Change</th></tr></thead><tbody id="wTbl"></tbody></table></div>
+    <div class="tbl-wrap"><table class="w-tbl"><thead><tr><th>As at</th><th>Cash</th><th>Savings</th><th>Invest.</th><th>Card</th><th>Student loan</th><th>Other debts</th><th>Net worth</th><th>Change</th></tr></thead><tbody id="wTbl"></tbody></table></div>
     <p class="note">${later ? `Savings and investments are only filled in on the sheet up to ${mLabel(M.through)}, so the chart stops there. ` : ''}Kids’ savings are left out unless you tick the box. This differs a little from the totals on your sheet: it leaves out the children’s money held in the Santander account, nets off loans, and counts the regular saver in every month. The 2nd-mortgage cash held in 2022–23 is borrowed, so it isn’t counted. “Free after pots” is your sheet’s own figure after earmarked pots and the £4,000 emergency fund. The student loan is rebuilt from your student loan sheet and the payments. Pensions, the house and the mortgage aren’t in the chart.</p>`;
   document.getElementById('kidsChk').onchange = e => { prefs.kids = e.target.checked; savePrefs(); renderWorth(); };
   // year table: each December, plus the latest month
   const rows = ms.filter(m => m.endsWith('-12')); if(!rows.includes(lastM)) rows.push(lastM);
   document.getElementById('wTbl').innerHTML = rows.map((m,i) => { const v = M.at(m, kids), p = i ? M.at(rows[i-1], kids) : null, d = p ? v.total - p.total : null;
-    return `<tr data-m="${m}"><td>${mLabel(m)}</td><td>${gbp(v.Cash)}</td><td>${gbp(v.Savings)}</td><td>${gbp(v.Investments)}</td><td>${v.Liabilities ? signed(v.Liabilities) : '–'}</td><td><b>${signed(v.total)}</b></td><td class="${d==null?'':d<0?'neg':'pos'}">${d==null?'':(d<0?'−':'+')+gbp(Math.abs(d))}</td></tr>`; }).join('');
+    return `<tr data-m="${m}"><td>${mLabel(m)}</td><td>${gbp(v.Cash)}</td><td>${gbp(v.Savings)}</td><td>${gbp(v.Investments)}</td><td>${v.card ? signed(v.card) : '–'}</td><td>${v.student ? signed(v.student) : '–'}</td><td>${Math.abs(v.otherDebt)>=0.5 ? signed(v.otherDebt) : '–'}</td><td><b>${signed(v.total)}</b></td><td class="${d==null?'':d<0?'neg':'pos'}">${d==null?'':(d<0?'−':'+')+gbp(Math.abs(d))}</td></tr>`; }).join('');
   document.querySelectorAll('#wTbl tr').forEach(r => r.onclick = () => { prefs.asof = r.dataset.m; prefs.src = 'assets'; savePrefs(); render(); });
   // chart
   const svgEl = document.getElementById('wSvg'), W = Math.max(280, svgEl.parentNode.clientWidth - 4), H = 290, L = 46, R = 8, T = 10, B = 22;
@@ -1157,7 +1157,7 @@ function renderWorth(){
   const show = i => { const v = vals[i], m = ms[i], f = M.F.afterPots[m];
     rule.attr('x1',x(i)).attr('x2',x(i)).attr('opacity',.6); dot.attr('cx',x(i)).attr('cy',y(v.total)).attr('opacity',1);
     read.innerHTML = `<div class="r-top"><b>${mLabel(m)}</b><span class="mono">${signed(v.total)}</span></div>
-      <div class="r-grid">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span><b class="mono">${gbp(v[g])}</b>`).join('')}${v.Liabilities?`<span><i style="background:${gColor('Liabilities')}"></i>Debts</span><b class="mono">${signed(v.Liabilities)}</b>`:''}${f?`<span><i class="ln dash"></i>Free after pots</span><b class="mono">${signed(f)}</b>`:''}</div>
+      <div class="r-grid">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span><b class="mono">${gbp(v[g])}</b>`).join('')}${[['Credit card',v.card],['Student loan',v.student],['Other debts',v.otherDebt]].filter(d=>Math.abs(d[1])>=0.5).map(d=>`<span><i style="background:${gColor('Liabilities')}"></i>${d[0]}</span><b class="mono">${signed(d[1])}</b>`).join('')}${f?`<span><i class="ln dash"></i>Free after pots</span><b class="mono">${signed(f)}</b>`:''}</div>
       <button class="linkbtn" id="toAssets">See the asset list for ${mLabel(m)} →</button>`;
     document.getElementById('toAssets').onclick = () => { prefs.asof = m; prefs.src = 'assets'; savePrefs(); render(); }; };
   const pick = ev => { const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width); show(Math.max(0, Math.min(n-1, Math.round((px - L) / (W-L-R) * (n-1))))); };
@@ -1222,11 +1222,14 @@ function renderAssets(){
         ${gone ? '' : `<span class="bar-sh"><i style="width:${Math.min(100,Math.max(0,Math.abs(r.v)/Math.abs(base)*100)).toFixed(1)}%;background:${gColor(g)}"></i></span>`}
       </button>
       ${open ? `<div class="as-det">${bigLine(a, all, gColor(g))}<div class="facts"><span>First: <b>${firstK?mLabel(firstK):'–'}</b></span><span>Peak: <b>${gbp(a.series[peakK]||0)}</b> · ${peakK?mLabel(peakK):''}</span><span>Last: <b>${lastK?mLabel(lastK):'–'}</b></span></div>${a.note?`<p class="note" style="margin:6px 0 0">${a.note}</p>`:''}</div>` : ''}</li>`; };
+  const debtRows = rows.filter(r => r.a.group==='Liabilities' && !r.a.memo && live(r));
+  const dv = id => debtRows.filter(r => r.a.id===id).reduce((s,r)=>s+r.v,0), dOther = debts - dv('cc') - dv('student');
+  const debtSplit = [['Card',dv('cc')],['Student loan',dv('student')],['Other',dOther]].filter(d=>Math.abs(d[1])>=0.5).map(d=>`${d[0]} ${signed(d[1])}`).join(' · ') || 'none';
   const memo = rows.filter(r => r.a.memo && r.k);
   el.innerHTML = `
     <div class="stats">
       <div class="stat"><span class="k">Assets</span><span class="v">${gbp(mine)}</span><span class="s">cash, savings, investments</span></div>
-      <div class="stat"><span class="k">Debts</span><span class="v ${debts<0?'neg':''}">${debts?signed(debts):'£0'}</span><span class="s">credit card, loans</span></div>
+      <div class="stat"><span class="k">Debts</span><span class="v ${debts<0?'neg':''}">${debts?signed(debts):'£0'}</span><span class="s">${debtSplit}</span></div>
       <div class="stat"><span class="k">Net worth</span><span class="v">${signed(mine+debts)}</span><span class="s">${mode==='latest'?'latest known':mLabel(mode)}</span></div>
     </div>
     <div class="as-bar"><label>As at <select id="asofSel"><option value="latest"${mode==='latest'?' selected':''}>Latest known</option>${[...M.months].reverse().map(m=>`<option value="${m}"${m===mode?' selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
