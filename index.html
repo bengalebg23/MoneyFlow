@@ -335,7 +335,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.5';
+const APP_VERSION = '1.8.6';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1111,7 +1111,7 @@ function renderWorth(){
     </div>
     <div class="card w-card">
       <div class="w-head"><label class="chk"><input type="checkbox" id="kidsChk" ${kids?'checked':''}> Include kids’ savings</label>
-        <span class="w-key">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span>`).join('')}<span><i class="ln"></i>Net worth</span><span><i class="ln dash"></i>Free after pots</span></span></div>
+        <span class="w-key">${['Cash'].concat(kids?[FS_KIDS]:[], ['Savings','Investments']).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span>`).join('')}<span><i class="ln"></i>Net worth</span><span><i class="ln dash"></i>Free after pots</span></span></div>
       <svg id="wSvg" role="img" aria-label="Net worth over time, stacked by cash, savings and investments"></svg>
       <div id="wRead" class="w-read"></div>
     </div>
@@ -1127,7 +1127,7 @@ function renderWorth(){
   // chart
   const svgEl = document.getElementById('wSvg'), W = Math.max(280, svgEl.parentNode.clientWidth - 4), H = 290, L = 46, R = 8, T = 10, B = 22;
   const n = ms.length, x = i => L + (W-L-R) * (n>1 ? i/(n-1) : 0);
-  const layers = ['Cash','Savings','Investments'].concat(kids ? [FS_KIDS] : []);
+  const layers = ['Investments','Savings'].concat(kids ? [FS_KIDS] : [], ['Cash']); // cash on top so its swings don't move the rest
   const topAt = vals.map(v => layers.reduce((s,g) => s + Math.max(v[g],0), 0));
   const maxY = Math.max(...topAt, ...vals.map(v=>v.total), 1) * 1.06, minY = Math.min(0, ...vals.map(v=>v.Liabilities)) * 1.2;
   const y = v => T + (maxY - v) / (maxY - minY) * (H - T - B);
