@@ -334,7 +334,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1059,16 +1059,34 @@ function parseCashFlowYears(A){
 const mLabel = m => { const [y,mm] = m.split('-'); return MON[+mm-1] + ' ' + y; };
 const gColor = g => ({Cash:css('--c-home'), Savings:css('--c-spend'), Investments:css('--c-annual'), Liabilities:css('--c-gap'), [FS_KIDS]:css('--c-kids')}[g] || css('--c-in'));
 const signed = v => (v<0 ? '−' : '') + gbp(Math.abs(v));
+// Balances read from bank screenshots and the NatWest Invest CSV (2 Oct 2026); the sheet wins wherever it has a figure.
+const ADDS = {
+  'nw-rew':{'2026-04':50,'2026-05':38,'2026-06':26,'2026-07':14,'2026-08':2,'2026-09':5,'2026-10':3},
+  'nw-reg':{'2026-04':833,'2026-05':987.35,'2026-06':0,'2026-07':150.9,'2026-08':301.12,'2026-09':151.9,'2026-10':52.6},
+  'cc':{'2026-07':-18.99,'2026-08':-18.99,'2026-09':-31.99,'2026-10':-31.99},
+  'nwi5':{'2026-04':13484,'2026-05':14498,'2026-06':15593,'2026-07':15092,'2026-08':15883,'2026-09':16811,'2026-10':16960.72}
+};
+function withAdds(F){
+  const months = new Set(F.months);
+  const assets = F.assets.map(a => { const add = ADDS[a.id]; if(!add) return a; const series = Object.assign({}, a.series);
+    for(const [m,v] of Object.entries(add)){ if(series[m]==null){ series[m] = v; months.add(m); } }
+    return Object.assign({}, a, {series}); });
+  return Object.assign({}, F, {assets, months:[...months].sort()});
+}
+const FF_FROM = '2026-03'; // accounts with a figure this recent are assumed unchanged until the next one
 function fullModel(){
-  const F = FULL, real = F.assets.filter(a => !a.memo);
+  const F = withAdds(FULL), real = F.assets.filter(a => !a.memo);
   const has = m => real.some(a => a.group!==FS_KIDS && a.series[m]!=null);
   const inv = F.assets.find(a => a.id==='nwi5');
   const invMonths = inv ? Object.keys(inv.series).sort() : [];
   const all = F.months.filter(has);
   const through = invMonths.length ? invMonths[invMonths.length-1] : all[all.length-1];
   const months = all.filter(m => m <= through);
+  const lastKeys = new Map(real.map(a => [a, Object.keys(a.series).filter(k => a.series[k]!=null).sort().pop()]));
   const at = (m, kids) => { const o = {Cash:0, Savings:0, Investments:0, Liabilities:0, [FS_KIDS]:0};
-    real.forEach(a => { if(a.group===FS_KIDS && !kids) return; o[a.group] += a.series[m] || 0; });
+    real.forEach(a => { if(a.group===FS_KIDS && !kids) return; let v = a.series[m];
+      if(v==null){ const lk = lastKeys.get(a); if(lk && lk >= FF_FROM && m > lk) v = a.series[lk]; }
+      o[a.group] += v || 0; });
     o.total = o.Cash + o.Savings + o.Investments + o.Liabilities + (kids ? o[FS_KIDS] : 0); return o; };
   return {F, real, months, through, all, latest: all[all.length-1], at};
 }
@@ -1120,7 +1138,7 @@ function renderWorth(){
     svg.append('path').attr('d', area(vals.map(v=>v.Liabilities))).attr('fill', gColor('Liabilities')).attr('fill-opacity', .8); }
   const line = d3.line().x((d,i)=>x(i)).y(d=>y(d)).curve(d3.curveMonotoneX);
   svg.append('path').attr('d', line(vals.map(v=>v.total))).attr('fill','none').attr('stroke', css('--paper')).attr('stroke-width', 2);
-  const fp = ms.map(m => M.F.afterPots[m]), fpPts = fp.map((v,i) => v==null ? null : [i,v]).filter(Boolean);
+  const fp = ms.map(m => M.F.afterPots[m]), fpPts = fp.map((v,i) => !v ? null : [i,v]).filter(Boolean);
   if(fpPts.length > 2) svg.append('path').attr('d', d3.line().x(d=>x(d[0])).y(d=>y(d[1])).curve(d3.curveMonotoneX)(fpPts)).attr('fill','none').attr('stroke', css('--paper')).attr('stroke-width', 1.5).attr('stroke-dasharray','4 3');
   const rule = svg.append('line').attr('y1',T).attr('y2',H-B).attr('stroke', css('--paper')).attr('stroke-width',1).attr('opacity',0);
   const dot = svg.append('circle').attr('r',4).attr('fill', css('--paper')).attr('opacity',0);
@@ -1128,7 +1146,7 @@ function renderWorth(){
   const show = i => { const v = vals[i], m = ms[i], f = M.F.afterPots[m];
     rule.attr('x1',x(i)).attr('x2',x(i)).attr('opacity',.6); dot.attr('cx',x(i)).attr('cy',y(v.total)).attr('opacity',1);
     read.innerHTML = `<div class="r-top"><b>${mLabel(m)}</b><span class="mono">${signed(v.total)}</span></div>
-      <div class="r-grid">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span><b class="mono">${gbp(v[g])}</b>`).join('')}${v.Liabilities?`<span><i style="background:${gColor('Liabilities')}"></i>Debts</span><b class="mono">${signed(v.Liabilities)}</b>`:''}${f!=null?`<span><i class="ln dash"></i>Free after pots</span><b class="mono">${signed(f)}</b>`:''}</div>
+      <div class="r-grid">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span><b class="mono">${gbp(v[g])}</b>`).join('')}${v.Liabilities?`<span><i style="background:${gColor('Liabilities')}"></i>Debts</span><b class="mono">${signed(v.Liabilities)}</b>`:''}${f?`<span><i class="ln dash"></i>Free after pots</span><b class="mono">${signed(f)}</b>`:''}</div>
       <button class="linkbtn" id="toAssets">See the asset list for ${mLabel(m)} →</button>`;
     document.getElementById('toAssets').onclick = () => { prefs.asof = m; prefs.src = 'assets'; savePrefs(); render(); }; };
   const pick = ev => { const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width); show(Math.max(0, Math.min(n-1, Math.round((px - L) / (W-L-R) * (n-1))))); };
@@ -1156,9 +1174,9 @@ function renderAssets(){
   const keyOf = a => { if(mode!=='latest') return a.series[mode]!=null ? mode : null; const ks = Object.keys(a.series).filter(k => a.series[k]!=null && k<=M.latest).sort(); return ks.length ? ks[ks.length-1] : null; };
   const yearAgo = m => { const [y,mm] = m.split('-'); return `${+y-1}-${mm}`; };
   const rows = M.F.assets.map(a => { const k = keyOf(a), v = k ? a.series[k] : null;
-    const prevK = k ? yearAgo(k) : null, pv = prevK ? a.series[prevK] : null;
+    const stale0 = mode==='latest' && k && k < FF_FROM && a.group!==FS_KIDS; const prevK = k ? yearAgo(k) : null, pv = prevK ? a.series[prevK] : null;
     const hist = all.filter(m => m <= (k||ref)).slice(-36).map(m => a.series[m] ?? null);
-    return {a, k, v, change: v!=null && pv!=null ? v - pv : null, hist}; });
+    return {a, k, v: stale0 ? 0 : v, change: v!=null && pv!=null ? v - pv : null, hist}; });
   const live = r => r.v!=null && Math.abs(r.v) >= 0.5;
   const order = ['Cash','Savings','Investments','Liabilities',FS_KIDS];
   const tot = g => rows.filter(r => r.a.group===g && !r.a.memo && live(r)).reduce((s,r) => s + r.v, 0);
@@ -1169,7 +1187,7 @@ function renderAssets(){
     return `<section class="as-sec"><div class="as-head"><i style="background:${gColor(g)}"></i><h3>${g==='Liabilities'?'Debts':g}</h3><span class="mono">${signed(gt)}</span>${g!=='Liabilities' && g!==FS_KIDS ? `<span class="pct">${Math.round(gt/mine*100)}%</span>` : ''}</div>
       ${g===FS_KIDS?'<p class="note" style="margin:0 0 6px">Held for the children, so not counted in your net worth.</p>':''}
       <ul class="as-list">${lv.map(r => rowHtml(r, base, g)).join('')}</ul>
-      ${gone.length ? `<details class="as-gone"><summary>${gone.length} closed or empty</summary><ul class="as-list">${gone.map(r => rowHtml(r, 1, g, true)).join('')}</ul></details>` : ''}</section>`; };
+      ${gone.length ? `<details class="as-gone"><summary>${gone.length} closed, empty or not updated recently</summary><ul class="as-list">${gone.map(r => rowHtml(r, 1, g, true)).join('')}</ul></details>` : ''}</section>`; };
   const rowHtml = (r, base, g, gone) => { const a = r.a, open = openAssets.has(a.id), stale = r.k && r.k !== ref && mode==='latest';
     const peakK = Object.keys(a.series).reduce((b,k) => (a.series[k] > (a.series[b] ?? -Infinity) ? k : b), Object.keys(a.series)[0]);
     const firstK = Object.keys(a.series).filter(k => a.series[k]).sort()[0], lastK = Object.keys(a.series).filter(k => a.series[k]).sort().pop();
