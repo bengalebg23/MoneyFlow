@@ -252,6 +252,28 @@
   tr.sub td{color:var(--paper-dim); font-size:12.5px; padding-block:4px;}
   tr.sub td:first-child{padding-left:30px;}
   tfoot td{font-weight:600;}
+
+  .sub-tabs{margin-top:-2px;}
+  .sub-tab{border:0; background:transparent; color:var(--paper-dim); padding:4px 10px; font:600 12px 'Inter',sans-serif; cursor:pointer; border-bottom:2px solid transparent;}
+  .sub-tab.active{color:var(--paper); border-bottom-color:var(--paper);}
+  .w-card{padding:12px;} .w-head{display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:12px;}
+  .chk{display:inline-flex; gap:6px; align-items:center; cursor:pointer;}
+  .w-key{display:flex; flex-wrap:wrap; gap:4px 12px; color:var(--paper-dim);} .w-key span{display:inline-flex; align-items:center; gap:5px;}
+  .w-key i{width:10px; height:10px; border-radius:2px; display:inline-block;} .w-key i.ln{height:0; width:14px; border-top:2px solid var(--paper); border-radius:0;} .w-key i.dash{border-top-style:dashed;}
+  #wSvg{display:block; width:100%; max-width:100%;} .ax{font:10px 'Inter',sans-serif; fill:var(--paper-dim);}
+  .w-read{margin-top:8px; font-size:13px;} .w-read .r-top{display:flex; justify-content:space-between; margin-bottom:4px;}
+  .w-read .r-grid{display:grid; grid-template-columns:1fr auto; gap:2px 14px;} .w-read .r-grid span{display:inline-flex; align-items:center; gap:6px;} .w-read i{width:9px; height:9px; border-radius:2px; display:inline-block;}
+  .linkbtn{margin-top:6px; border:0; background:none; color:var(--c-annual); font:600 12px 'Inter',sans-serif; padding:0; cursor:pointer;}
+  .w-tbl td,.w-tbl th{white-space:nowrap;} .w-tbl tr[data-m]{cursor:pointer;} .neg{color:var(--c-gap);}
+  .as-bar{display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; margin:14px 0 6px; font-size:13px;} .as-bar select{font:inherit; padding:3px 6px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:var(--paper);}
+  .as-sec{margin:14px 0;} .as-head{display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line); padding-bottom:5px;} .as-head h3{margin:0; font-size:15px; flex:1;} .as-head i{width:10px; height:10px; border-radius:2px;} .as-head .pct{color:var(--paper-dim); font-size:12px;}
+  .as-list{list-style:none; margin:0; padding:0;} .as-row{border-bottom:1px solid var(--line);}
+  .as-main{display:grid; grid-template-columns:1fr 64px auto; grid-template-areas:"nm sp am" "bar bar chg"; gap:2px 10px; width:100%; text-align:left; background:none; border:0; padding:9px 0; color:var(--paper); font:inherit; cursor:pointer; align-items:center;}
+  .as-main .nm{grid-area:nm; font-size:14px;} .as-main .sp{grid-area:sp;} .as-main .am{grid-area:am; text-align:right; font-weight:600;} .as-main .chg{grid-area:chg; font-size:11px; text-align:right; color:var(--paper-dim);} .as-main .chg.pos{color:var(--c-left);} .as-main .chg.neg{color:var(--c-gap);}
+  .as-main .bar-sh{grid-area:bar; height:4px; background:var(--line); border-radius:2px; overflow:hidden;} .as-main .bar-sh i{display:block; height:100%;}
+  .nc{font-style:normal; font-size:10.5px; color:var(--paper-dim); border:1px solid var(--line); border-radius:6px; padding:0 5px; margin-left:4px;}
+  .as-det{padding:0 0 10px;} .big-line{width:100%; height:120px; display:block;} .facts{display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12px; color:var(--paper-dim);}
+  .as-gone summary{font-size:12px; color:var(--paper-dim); padding:6px 0; cursor:pointer;} .spark{display:block;}
   .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--paper); color:#fff; padding:9px 14px; border-radius:10px; font-size:13px; z-index:40; max-width:90vw;}
   @media (max-width:520px){ .stats{grid-template-columns:1fr 1fr;} .stats .stat:last-child{grid-column:1/-1;} }
 </style>
@@ -264,12 +286,11 @@
     <span class="version-badge mono" id="versionBadge"></span>
   </div>
   <div class="src-tabs" id="srcTabs" role="tablist" aria-label="Account"></div>
+  <div class="src-tabs sub-tabs" id="viewTabs" hidden></div>
   <div class="year-tabs" id="yearTabs" role="tablist" aria-label="Year"></div>
 </header>
 
 <main>
-  <div class="stats" id="stats"></div>
-
   <div class="bar">
     <p class="src" id="zoomHint"></p>
     <div class="btns">
@@ -280,6 +301,10 @@
     </div>
   </div>
 
+  <div id="worthView" hidden></div>
+  <div id="assetsView" hidden></div>
+  <div id="flowView">
+  <div class="stats" id="stats"></div>
   <div class="card">
     <div class="chart-box" id="chartBox">
       <svg id="sankey" role="img" aria-label="Sankey diagram of household income and spending. Pinch or scroll to zoom; tap a flow to compare years."></svg>
@@ -293,6 +318,7 @@
   <h2>Breakdown</h2>
   <div class="tbl-wrap"><table id="tbl"></table></div>
   <div id="tie" hidden></div>
+  </div>
 </main>
 <div class="tip" id="tip" hidden></div>
 <div class="toast" id="toast" hidden></div>
@@ -308,9 +334,10 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.8.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
+const EXTRA_KEY = 'moneyflow.extra.v1';
 
 const CATS = { // category → colour family, in display order of the legend
   "Mortgage":"home","Mortgage overpayment":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Home projects":"home",
@@ -318,7 +345,7 @@ const CATS = { // category → colour family, in display order of the legend
   "Holidays":"trips","Parties & weddings":"trips","Annual payments":"annual",
   // Ben's NatWest account
   "Paid into joint account":"home","Savings & investing":"annual","Student loan & tax":"annual","Work & lunches":"spend","Eating out":"spend",
-  "Shopping":"spend","Subscriptions & apps":"spend","Hobbies & leisure":"spend","Friends & social":"spend","Cash":"spend","Other":"spend","Travel":"trips"
+  "Personal spending":"spend","House & holiday (capex)":"trips","Other transfers":"annual","Shopping":"spend","Subscriptions & apps":"spend","Hobbies & leisure":"spend","Friends & social":"spend","Cash":"spend","Other":"spend","Travel":"trips"
 };
 const FAMLABEL = {home:"Home & bills",food:"Food",spend:"Everyday spending",kids:"Kids",trips:"Holidays & events",annual:"Annual payments"};
 
@@ -376,12 +403,19 @@ const NW_DATA = {"source":"Ben’s NatWest current account (…8020) · 9 statem
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
 try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.years){ JOINT = DATA = s; usingImport = true; } }catch(e){}
-let prefs = {year:null, src:'joint', detail:window.innerWidth >= 700};
+let prefs = {year:null, src:'joint', detail:window.innerWidth >= 700, nwView:'years', kids:false, asof:'latest'};
 try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }catch(e){}
 const isNW = () => prefs.src === 'nw';
-const applySrc = () => { DATA = isNW() ? NW_DATA : JOINT; };
+const isStm = () => isNW() && prefs.nwView === 'stmts';
+const isFlow = () => prefs.src === 'joint' || prefs.src === 'nw';
+const applySrc = () => { DATA = isNW() ? (isStm() ? NW_DATA : NWY_DATA) : JOINT; };
 const lab = y => (DATA.labels && DATA.labels[y]) || y;
 const yearKeys = () => Object.keys(DATA.years).filter(y => !DATA.years[y].agg).sort();
+const FULL_BUILTIN = {"months":["2021-09","2021-10","2021-11","2021-12","2022-01","2022-02","2022-03","2022-04","2022-05","2022-06","2022-07","2022-08","2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10","2026-11","2026-12"],"assets":[{"id":"nw-cur","name":"NatWest current account","group":"Cash","counted":true,"memo":false,"series":{"2026-09":321,"2026-08":416,"2026-07":745,"2026-06":111,"2026-05":787,"2026-04":424,"2026-03":334,"2026-02":64,"2026-01":385,"2025-12":251,"2025-11":787,"2025-10":2476,"2025-09":2343,"2025-08":1185,"2025-07":551,"2025-06":1048,"2025-05":1937,"2025-04":3175,"2025-03":3358,"2025-02":2039,"2025-01":2683,"2024-12":2209,"2024-11":2293,"2024-10":1920,"2024-09":959,"2024-08":1560,"2024-07":1398,"2024-06":502,"2024-05":48,"2024-04":759,"2024-03":937,"2024-02":693,"2024-01":606,"2023-12":335,"2023-11":2186,"2023-10":2428,"2023-09":3249,"2023-08":3337,"2023-07":3965,"2023-06":4217,"2023-05":4922,"2023-04":4311,"2023-03":4085,"2023-02":3473,"2023-01":3522,"2022-12":3713,"2022-11":4016,"2022-10":4477,"2022-09":5504,"2022-08":4900,"2022-07":3354,"2022-06":2299,"2022-05":1703,"2022-04":640,"2022-03":343,"2022-02":277,"2022-01":675,"2021-09":1570,"2021-10":1560,"2021-11":575,"2021-12":710}},{"id":"sant","name":"Santander joint account","group":"Cash","counted":true,"memo":false,"series":{"2026-09":913,"2026-08":1886,"2026-07":1612,"2026-06":1537,"2026-05":3094,"2026-04":9109,"2026-03":1893,"2026-02":2257,"2026-01":1802,"2025-12":2059,"2025-11":2031,"2025-10":1964,"2025-09":3134,"2025-08":2375,"2025-07":3002,"2025-06":2586,"2025-05":2361,"2025-04":2598,"2025-03":3208,"2025-02":2748,"2025-01":2905,"2024-12":2379,"2024-11":2245,"2024-10":2252,"2024-09":2285,"2024-08":7643,"2024-07":7995,"2024-06":4301,"2024-05":1356,"2024-04":1375,"2024-03":3488,"2024-02":2973,"2024-01":2515,"2023-12":1011,"2023-11":1639,"2023-10":1563,"2023-09":1607,"2023-08":1892,"2023-07":948,"2023-06":4822,"2023-05":3074,"2023-04":4202,"2023-03":3571,"2023-02":3169,"2023-01":3592,"2022-12":5313,"2022-11":5574}},{"id":"nsi","name":"NS&I","group":"Savings","counted":true,"memo":false,"series":{"2026-03":250,"2026-02":250,"2026-01":250,"2025-12":250,"2025-11":250,"2025-10":250,"2025-09":250,"2025-08":250,"2025-07":250,"2025-06":250,"2025-05":250,"2025-04":250,"2025-03":250,"2025-02":250,"2025-01":250}},{"id":"nw-rew","name":"NatWest Rewards account","group":"Cash","counted":true,"memo":false,"series":{"2026-03":60,"2026-02":14,"2026-01":50,"2025-12":86,"2025-11":85,"2025-10":70,"2025-09":55,"2025-08":40,"2025-07":25,"2025-06":10,"2025-05":25,"2025-04":85,"2025-03":100,"2025-02":57,"2025-01":63,"2024-12":71,"2024-11":78,"2024-10":32,"2024-09":40,"2024-08":48,"2024-07":56,"2024-06":11,"2024-05":20,"2024-04":56,"2024-03":65,"2024-02":52,"2024-01":12,"2023-12":26,"2023-11":38,"2023-10":48,"2023-09":61,"2023-08":66,"2023-07":75,"2023-06":82,"2023-05":87,"2023-04":41,"2023-03":48,"2023-02":54,"2023-01":23,"2022-12":35,"2022-11":46,"2022-10":52,"2022-09":61,"2022-08":52,"2022-07":64,"2022-06":80,"2022-05":88,"2022-04":95,"2022-03":102,"2022-02":109,"2022-01":100,"2021-09":292,"2021-10":85,"2021-11":81,"2021-12":74}},{"id":"nw-reg","name":"NatWest regular saver","group":"Savings","counted":true,"memo":false,"series":{"2025-12":1220,"2025-06":305,"2025-05":154,"2025-04":1006,"2025-03":853,"2025-02":749,"2025-01":1094,"2024-12":939,"2024-11":786,"2024-10":633,"2024-09":483,"2024-08":3301,"2024-07":3135,"2024-06":2972,"2024-05":2808,"2024-04":2646,"2024-03":2483,"2024-02":2322,"2024-01":2162,"2023-12":2003,"2023-11":1844,"2023-10":1686,"2023-09":1529,"2023-08":1379,"2023-07":1217,"2023-06":1062,"2023-05":908,"2023-04":755,"2023-03":602,"2023-02":451,"2023-01":300,"2022-12":150,"2022-11":0,"2026-03":1531,"2026-02":1531,"2026-01":1376,"2025-11":1066,"2025-10":912,"2025-09":760,"2025-08":607,"2025-07":456}},{"id":"cc","name":"Credit card","group":"Liabilities","counted":true,"memo":false,"series":{"2026-03":-8,"2026-02":-8,"2026-01":-8,"2025-12":-8,"2025-11":-8,"2025-10":-8,"2025-09":-8,"2025-08":-8,"2025-07":-8,"2025-06":-8,"2025-05":-8,"2025-04":-8,"2025-03":-8,"2025-02":-8,"2025-01":-1416,"2024-12":-166,"2024-11":-158,"2024-10":-16,"2024-09":884,"2024-08":-8,"2024-07":-14,"2024-06":-14,"2024-05":-14,"2024-04":-82,"2024-03":-80,"2024-02":-136,"2024-01":-6,"2023-12":-6,"2023-11":-6,"2023-10":-315,"2023-09":-6,"2023-08":-12,"2023-07":-316,"2023-06":-341,"2023-05":-6,"2023-04":-6,"2023-03":-6,"2023-02":-25,"2023-01":-304,"2022-12":-6,"2022-11":-103,"2022-10":-91,"2022-09":-1,"2022-08":-54,"2022-07":-313,"2022-06":-763,"2022-05":-43,"2022-04":0,"2022-03":0,"2022-02":0,"2022-01":0,"2021-09":0,"2021-10":0,"2021-11":0,"2021-12":0}},{"id":"reu-sant","name":"Reuben (held in the Santander account)","group":"Kids' savings","counted":false,"memo":false,"series":{"2024-12":0,"2024-11":0,"2024-10":0,"2024-09":107,"2024-08":214,"2024-07":321,"2024-06":428,"2024-05":535,"2024-04":642,"2024-03":749,"2024-02":856,"2024-01":963,"2023-12":1070,"2023-11":1070,"2023-10":1070,"2023-09":1070,"2023-08":1070,"2023-07":1070,"2023-06":1070,"2023-05":1070,"2023-04":1070,"2023-03":1070,"2023-02":1070,"2023-01":1070}},{"id":"nw-sav","name":"NatWest savings account","group":"Savings","counted":true,"memo":false,"series":{"2023-12":0,"2023-11":0,"2023-10":0,"2023-09":0,"2023-08":0,"2023-07":0,"2023-06":0,"2023-05":0,"2023-04":1298,"2023-03":1994,"2023-02":2292,"2023-01":2592,"2022-12":2880,"2022-11":6674,"2022-10":6572,"2022-09":472,"2022-08":371,"2022-07":271,"2022-06":171,"2022-05":970,"2022-04":5005,"2022-03":7307,"2022-02":7205,"2022-01":7100,"2021-09":3700,"2021-10":3800,"2021-11":7400,"2021-12":7000}},{"id":"loan","name":"Loan funds held","group":"Cash","counted":true,"memo":false,"series":{"2024-03":0,"2023-12":0,"2023-11":0,"2023-10":0,"2023-09":0,"2023-08":0,"2023-07":0,"2023-06":5502,"2023-05":0,"2023-04":0,"2023-03":0,"2023-02":0,"2023-01":0}},{"id":"loan-owed","name":"Loan owed","group":"Liabilities","counted":true,"memo":false,"series":{"2024-03":0,"2023-12":0,"2023-11":0,"2023-10":0,"2023-09":0,"2023-08":0,"2023-07":0,"2023-06":-5502,"2023-05":0,"2023-04":0,"2023-03":0,"2023-02":0,"2023-01":0}},{"id":"lloyds","name":"Lloyds account","group":"Cash","counted":true,"memo":false,"series":{"2024-03":0,"2023-12":0,"2023-11":0,"2023-10":0,"2023-09":0,"2023-08":0,"2023-07":857,"2023-06":776,"2023-05":696,"2023-04":651,"2023-03":609,"2023-02":640,"2023-01":584,"2022-12":601,"2022-11":585,"2022-10":0,"2022-09":0,"2022-08":0,"2022-07":0,"2022-06":0,"2022-05":0,"2022-04":0,"2022-03":0,"2022-02":0,"2022-01":0,"2021-09":0,"2021-10":0,"2021-11":0,"2021-12":0}},{"id":"hal1","name":"Halifax account","group":"Cash","counted":true,"memo":false,"series":{"2023-06":0,"2023-05":0,"2023-04":230,"2023-03":230,"2023-02":230,"2023-01":230,"2022-12":230,"2022-11":230,"2022-10":230,"2022-09":5230,"2022-08":6230,"2022-07":6230,"2022-06":6230,"2022-05":6230,"2022-04":6230,"2022-03":6230,"2022-02":6230,"2022-01":6575,"2021-09":5058,"2021-10":5063,"2021-11":6568,"2021-12":6570}},{"id":"hal2","name":"Halifax account (2nd)","group":"Cash","counted":true,"memo":false,"series":{"2022-12":0,"2022-11":0,"2022-10":0,"2022-09":0,"2022-08":0,"2022-07":0,"2022-06":0,"2022-05":0,"2022-04":60,"2022-03":85,"2022-02":53,"2022-01":0,"2021-09":5027,"2021-10":5032,"2021-11":0,"2021-12":0}},{"id":"fd","name":"First Direct","group":"Cash","counted":true,"memo":false,"series":{"2022-12":0,"2022-11":0,"2022-10":0,"2022-09":0,"2022-08":0,"2022-07":0,"2022-06":216,"2022-05":213,"2022-04":0,"2022-03":0,"2022-02":0,"2022-01":0,"2021-09":0,"2021-10":0,"2021-11":0,"2021-12":0}},{"id":"hsbc","name":"HSBC","group":"Cash","counted":false,"memo":false,"series":{"2022-12":0,"2022-11":0,"2022-10":0,"2022-09":0,"2022-08":251,"2022-07":216,"2022-06":0,"2022-05":0,"2022-04":0,"2022-03":0,"2022-02":0,"2022-01":0,"2021-09":0,"2021-10":0,"2021-11":0,"2021-12":0}},{"id":"sant2","name":"Santander #2","group":"Cash","counted":false,"memo":false,"series":{"2022-12":0,"2022-11":0,"2022-10":180,"2022-09":257,"2022-08":0,"2022-07":0,"2022-06":0,"2022-05":0,"2022-04":0,"2022-03":0,"2022-02":0,"2022-01":0,"2021-09":0,"2021-10":0,"2021-11":0,"2021-12":0}},{"id":"boi","name":"2nd-mortgage cash held (BOI)","group":"Cash","counted":false,"memo":true,"series":{"2023-05":0,"2023-04":0,"2023-03":0,"2023-02":0,"2023-01":0,"2022-12":18812,"2022-11":25000,"2022-10":35000,"2022-09":55000}},{"id":"lloyds-sav","name":"Lloyds monthly saver","group":"Savings","counted":false,"memo":false,"series":{"2024-04":0,"2024-03":0,"2024-02":0,"2024-01":0,"2023-12":5335,"2023-11":4800,"2023-10":4400,"2023-09":4000,"2023-08":3600,"2023-07":3200,"2023-06":2800,"2023-05":2400,"2023-04":2000,"2023-03":1600,"2023-02":1200,"2023-01":800,"2022-12":400,"2022-11":0,"2022-10":0,"2022-09":0,"2022-08":0}},{"id":"edge","name":"Santander Edge saver","group":"Savings","counted":false,"memo":false,"series":{"2025-12":0,"2025-11":0,"2025-10":0,"2025-09":0,"2025-08":0,"2025-07":0,"2025-06":135,"2025-05":135,"2025-04":134,"2025-03":134,"2025-02":133,"2025-01":133,"2024-12":132,"2024-11":131,"2024-10":130,"2024-09":126,"2024-08":1126,"2024-07":1113,"2024-06":1107,"2024-05":1090,"2024-04":4067,"2024-03":4044,"2024-02":4023,"2024-01":4000}},{"id":"etoro","name":"eToro (\u00a3 account)","group":"Investments","counted":true,"memo":false,"series":{"2026-02":0,"2026-01":0,"2025-12":0,"2025-11":0,"2025-10":0,"2025-09":0,"2025-08":0,"2025-07":0,"2025-06":908,"2025-05":831,"2025-04":697,"2025-03":698,"2025-02":2841,"2025-01":2956,"2024-12":2956,"2024-11":2155,"2024-10":1665,"2024-09":1665,"2024-08":1700,"2024-07":1676,"2024-06":1660,"2024-05":1576,"2024-04":1540.8,"2024-03":1490.4,"2024-02":1440,"2024-01":1400,"2023-12":1320,"2023-11":1320,"2023-10":1288,"2023-09":1216,"2023-08":1176,"2023-07":1072.8,"2023-06":974.4,"2023-05":888,"2023-04":778.4,"2023-03":784.8,"2023-02":760.8,"2023-01":764,"2022-12":685.6,"2022-11":679.2,"2022-10":700.8,"2022-09":617.6,"2022-08":630.4,"2022-07":612,"2022-06":532,"2022-05":561.6,"2022-04":610.4,"2022-03":692.8,"2022-02":640,"2022-01":0,"2021-09":0,"2021-10":0,"2021-11":0,"2021-12":0}},{"id":"nwi5","name":"NatWest Invest 5","group":"Investments","counted":true,"memo":false,"series":{"2026-03":11820,"2026-02":12286,"2026-01":11466,"2025-12":11155,"2025-11":11155,"2025-10":11155,"2025-09":11155,"2025-08":11155,"2025-07":11155,"2025-06":6615,"2025-05":6615,"2025-04":6068,"2025-03":6502,"2025-02":6167,"2025-01":6252,"2024-12":5839,"2024-11":5618,"2024-10":5618,"2024-09":5352,"2024-08":5159,"2024-07":4962,"2024-06":4886,"2024-05":4668,"2024-04":4499,"2024-03":4417,"2024-02":4250,"2024-01":4050,"2023-12":3852,"2023-11":3690,"2023-10":3470,"2023-09":3403,"2023-08":3417,"2023-07":3298,"2023-06":3040,"2023-05":2995,"2023-04":2914,"2023-03":2692,"2023-02":2737,"2023-01":2679,"2022-12":2329,"2022-11":2250,"2022-10":2182,"2022-09":2005,"2022-08":1998,"2022-07":1926,"2022-06":1674,"2022-05":1703,"2022-04":1608,"2022-03":1473,"2022-02":1312,"2022-01":1365,"2021-09":400,"2021-10":500,"2021-11":1200,"2021-12":1300}},{"id":"nwi3","name":"NatWest Invest 3","group":"Investments","counted":true,"memo":false,"series":{"2026-03":0,"2026-02":0,"2026-01":0,"2025-12":0,"2025-11":0,"2025-10":0,"2025-09":0,"2025-08":0,"2025-07":0,"2025-06":5524,"2025-05":5524,"2025-04":5225,"2025-03":5489,"2025-02":5727,"2025-01":5734,"2024-12":5491,"2024-11":5219,"2024-10":5219,"2024-09":5071,"2024-08":4903,"2024-07":4696,"2024-06":4656,"2024-05":4479,"2024-04":4242,"2024-03":4274,"2024-02":4170,"2024-01":4070,"2023-12":3825,"2023-11":3509,"2023-10":3363,"2023-09":3355,"2023-08":3148,"2023-07":3154,"2023-06":3003,"2023-05":2786,"2023-04":2728,"2023-03":2650,"2023-02":2574,"2023-01":2510,"2022-12":2343,"2022-11":2191,"2022-10":2118,"2022-09":1957,"2022-08":2034,"2022-07":1893,"2022-06":1670,"2022-05":1703,"2022-04":1608,"2022-03":1560,"2022-02":1436,"2022-01":1364,"2021-09":1000,"2021-10":1100,"2021-11":1200,"2021-12":1300}},{"id":"stocked","name":"Stocked shares","group":"Investments","counted":false,"memo":false,"series":{"2026-03":359,"2026-02":359,"2026-01":359,"2025-12":359,"2025-11":359,"2025-10":359,"2025-09":359,"2025-08":359,"2025-07":359,"2025-06":359,"2025-05":359,"2025-04":359,"2025-03":359,"2025-02":359,"2025-01":359,"2024-12":359,"2024-11":359,"2024-10":359}},{"id":"viv","name":"Vivien savings (HSBC)","group":"Kids' savings","counted":false,"memo":false,"series":{"2025-12":3310,"2025-11":2541,"2025-10":2456,"2025-09":2371,"2025-08":2286,"2025-07":2201,"2025-06":2116,"2025-05":2031,"2025-04":1946,"2025-03":1861,"2025-02":1776,"2025-01":1691,"2024-12":0,"2024-11":0,"2024-10":0,"2024-09":0,"2024-08":0,"2024-07":0,"2024-06":0,"2024-05":0,"2024-04":0,"2024-03":0,"2024-02":0,"2024-01":0}},{"id":"reu-edge","name":"Reuben \u2013 Edge saver","group":"Kids' savings","counted":false,"memo":false,"series":{"2025-12":9172,"2025-11":8873,"2025-10":8788,"2025-09":8703,"2025-08":8618,"2025-07":8533,"2025-06":8448,"2025-05":8363,"2025-04":8278,"2025-03":8193,"2025-02":8108,"2025-01":6302,"2024-12":7835,"2024-11":7835,"2024-10":7835,"2024-09":7728,"2024-08":7621,"2024-07":7514,"2024-06":7407,"2024-05":7300,"2024-04":7193,"2024-03":1845,"2024-02":1729,"2024-01":1614,"2023-12":1503,"2023-11":1510,"2023-10":1425,"2023-09":1340,"2023-08":1255,"2023-07":1170,"2023-06":1085,"2023-05":1070,"2023-04":1070,"2023-03":1070,"2023-02":1070,"2023-01":1070}},{"id":"reu-hal","name":"Reuben \u2013 Halifax kids saver","group":"Kids' savings","counted":false,"memo":false,"series":{"2026-02":0,"2026-01":1610,"2025-02":0,"2025-01":1610,"2024-12":1545,"2024-11":1460,"2024-10":1375,"2024-09":1290,"2024-08":1205,"2024-07":1120,"2024-06":1035,"2024-05":950,"2024-04":865,"2024-03":780,"2024-02":695,"2024-01":610,"2023-12":525,"2023-11":440,"2023-10":355,"2023-09":270,"2023-08":185,"2023-07":100,"2023-06":15}},{"id":"etoro-usd","name":"eToro ($ account)","group":"Investments","counted":false,"memo":false,"series":{"2024-12":3695,"2024-11":2913,"2024-10":2163,"2024-09":2163,"2024-08":2208,"2024-07":2144,"2024-06":2079,"2024-05":2014,"2024-04":2089,"2024-03":1873,"2024-02":1810,"2024-01":1760,"2023-12":1879,"2023-11":1731,"2023-10":1583,"2023-09":1650,"2023-08":1535,"2023-07":1500,"2023-06":1504,"2023-05":1434,"2023-04":1433,"2023-03":1336,"2023-02":1452,"2023-01":1485,"2022-12":1612,"2022-11":1572,"2022-10":1557,"2022-09":1586,"2022-08":1438,"2022-07":1368,"2022-06":1365,"2022-05":1305,"2022-04":1194,"2022-03":1122,"2022-02":1121,"2022-01":953,"2021-11":950,"2021-12":951}}],"afterPots":{"2026-12":0,"2026-11":0,"2026-10":0,"2026-09":0,"2026-08":0,"2026-07":0,"2026-06":-2354,"2026-05":-120,"2026-04":5533,"2026-03":10349,"2026-02":3290,"2026-01":3739,"2025-12":11013,"2025-11":9772,"2025-10":11181,"2025-09":11962,"2025-08":9977,"2025-07":9918,"2025-06":12181,"2025-05":12632,"2025-04":9885,"2025-03":10397,"2025-02":10385,"2025-01":10283,"2024-12":15718,"2024-11":13855,"2024-10":12235,"2024-09":11522,"2024-08":9902,"2024-07":8804,"2024-06":3874,"2024-05":-887,"2024-04":-1735,"2024-03":-2362,"2024-02":-4139,"2024-01":-5012,"2023-12":9436,"2023-11":8941,"2023-10":6898,"2023-09":7138,"2023-08":6508,"2023-07":5731,"2023-06":14555,"2023-05":6477,"2023-04":7317,"2023-03":5740,"2023-02":3286,"2023-01":2679,"2022-12":14379,"2022-11":17736,"2022-10":11771,"2022-09":11362,"2022-08":11677,"2022-07":9523,"2022-06":7826,"2022-05":7847,"2022-04":8560,"2022-03":9192,"2022-02":8554,"2022-01":8090,"2021-09":1400,"2021-10":1600,"2021-11":2400,"2021-12":2600},"pots":{"2026-06":0,"2026-05":0,"2026-04":0,"2026-03":0,"2026-02":-7573,"2026-01":-7582,"2025-12":0,"2025-11":-528,"2025-10":-726,"2025-09":-967,"2025-08":-1020,"2025-07":-1057,"2025-06":-1057,"2025-05":-1057,"2025-04":-5211,"2025-03":-6053,"2025-02":-6185,"2025-01":-6238,"2024-12":0,"2024-11":-381,"2024-10":-1088,"2024-09":-1324,"2024-08":-10618,"2024-07":-11421,"2024-06":-11528,"2024-05":-12363,"2024-04":-13413,"2024-03":-16185,"2024-02":-16759,"2024-01":-16784,"2023-12":0,"2023-11":-2349,"2023-10":-3703,"2023-09":-4346,"2023-08":-4965,"2023-07":-5610,"2023-06":-5652,"2023-05":-6943,"2023-04":-7655,"2023-03":-8590,"2023-02":-10140,"2023-01":-10883,"2022-12":-7843,"2022-11":-22954,"2022-10":-33643,"2022-09":-48657,"2022-08":-58657,"2022-07":-58932,"2022-06":-58701,"2022-05":-59938,"2022-04":-62893,"2022-03":-64601,"2022-02":-64708,"2022-01":-65089},"emergency":{"2026-06":-4002,"2026-05":-4001,"2026-04":-4000,"2026-03":-4000,"2026-02":-4000,"2026-01":-4000,"2025-12":-4000,"2025-11":-4000,"2025-10":-4000,"2025-09":-4000,"2025-08":-4000,"2025-07":-4000,"2025-06":-4000,"2025-05":-4000,"2025-04":-4000,"2025-03":-4000,"2025-02":-4000,"2025-01":-4000,"2024-12":-4000,"2024-11":-4000,"2024-10":-4000,"2024-09":-4000,"2024-08":-4000,"2024-07":-4000,"2024-06":-4000,"2024-05":-4000,"2024-04":-4000,"2024-03":-4000,"2024-02":-4000,"2024-01":-4000,"2023-12":-4000,"2023-11":-4000,"2023-10":-4000,"2023-09":-4000,"2023-08":-4000,"2023-07":-4000,"2023-06":-4000,"2023-05":-4000,"2023-04":-4000,"2023-03":-4000,"2023-02":-4000,"2023-01":-4000,"2022-12":-4000,"2022-11":-4000,"2022-10":-4000,"2022-09":-4000,"2022-08":-4000,"2022-07":-4000,"2022-06":-4000,"2022-05":-4000,"2022-04":-4000,"2022-03":-4000,"2022-02":-4000,"2022-01":-4000}};
+const NWY_BUILTIN = {"2023":{"months":12,"income":{"Income":84227},"out":{"Paid into joint account":{"Regular payments & top-ups":28800},"Other transfers":{"Transfers to other accounts":11962},"Mortgage overpayment":{"Overpayment":11500},"Savings & investing":{"Natwest Savings":1150,"Investment #3":1100,"Investment #5":1400,"Savings":4800,"Regular saver":1650},"House & holiday (capex)":{"Holiday":930,"House":1987,"Extension":6381},"Personal spending":{"MIRA":711,"EToro":400,"Credit Card":408,"Treat yo'Self":690,"DnD":193,"Food":423,"Clothes":263,"Days out":173,"Tennis/swim":229,"Amazon":140,"Bdays":323,"Xmas":245,"Misc":164,"Car":8,"Reuben":8,"Out out":25,"Dentist":26,"Apple":1}},"note":""},"2024":{"months":12,"income":{"Income":39549,"Transfers in":3351},"out":{"Paid into joint account":{"Regular payments & top-ups":29150},"Savings & investing":{"Investment #3":1200,"Investment #5":1400,"Stocked shares":359,"Regular saver":1800},"House & holiday (capex)":{"Holiday":48,"House":772,"Solar":3500},"Personal spending":{"MIRA":338,"EToro":600,"Credit Card":544,"Fudge factor":17,"Flowers":20,"Treat yo'Self":188,"Playstation":29,"DnD":45,"Food":233,"Clothes":125,"Days out":21,"Tennis/swim":142,"Amazon":161,"Bdays":292,"Xmas":240,"Misc":240,"Car":47,"Reuben":37,"Boys night out":46,"Out out":100,"Dentist":90,"Invest cost":4,"Medicine/health":100,"Apple":73}},"note":""},"2025":{"months":6,"income":{"Income":20532,"Transfers in":2754},"out":{"Paid into joint account":{"Regular payments & top-ups":12500},"Savings & investing":{"Investment #3":200,"Investment #5":200,"Regular saver":750,"NS&I":250},"House & holiday (capex)":{"Holiday":3918,"House":24},"Personal spending":{"MIRA":303,"EToro":250,"Credit Card":32,"Flowers":55,"Treat yo'Self":343,"DnD":12,"Food":217,"Clothes":93,"Days out":29,"Tennis/swim":32,"Amazon":65,"Bdays":222,"Misc":30,"Car":27,"Reuben":12,"Invest cost":8,"Medicine/health":41,"Tax man":562,"Apple":90}},"note":"Only 6 months of this year are filled in on the sheet."},"2026":{"months":9,"income":{"Income":30426,"Withdrawn from savings":891},"out":{"Paid into joint account":{"Regular payments & top-ups":21550},"Savings & investing":{"Investment #5":3448},"House & holiday (capex)":{"Holiday":1500,"House":981},"Personal spending":{"MIRA":475,"Playstation":172,"DnD":53,"Food":843,"Clothes":16,"Days out":336,"Tennis/swim":120,"Amazon":271,"Bdays":123,"Misc":803,"Car":14,"Out out":167,"Dentist":24,"Tax man":76,"Apple":94,"CASH":80,"Haircut":41,"Phone contract":72}},"note":"Only 9 months of this year are filled in on the sheet."}};
+let FULL = FULL_BUILTIN, NWY_YEARS = NWY_BUILTIN, usingExtra = false;
+try{ const x = JSON.parse(localStorage.getItem(EXTRA_KEY)); if(x && x.full){ FULL = x.full; if(x.years && Object.keys(x.years).length) NWY_YEARS = x.years; usingExtra = true; } }catch(e){}
+let NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:NWY_YEARS};
 applySrc();
 const savePrefs = () => { try{ localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); }catch(e){} };
 
@@ -525,12 +559,20 @@ document.getElementById('fileIn').onchange = async ev => {
     JOINT = {source:`Imported from “${f.name}” on ${new Date().toLocaleDateString('en-GB')}`, years}; prefs.src = 'joint'; applySrc();
     usingImport = true;
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(JOINT)); }catch(e){}
-    prefs.year = null; toast(`Loaded ${Object.keys(years).sort().join(', ')} from ${f.name}`); render();
+    let extra = '';
+    try{ const fs = wb.Sheets['Full Summary'];
+      if(fs){ const A = XLSX.utils.sheet_to_json(fs,{header:1,raw:true,defval:null}), full = parseFullSummary(A), ny = parseCashFlowYears(A);
+        if(full){ FULL = full; if(Object.keys(ny).length) NWY_YEARS = ny; NWY_DATA = {source:`Built from the Expenses section of “${f.name}” (Full Summary sheet)`, years:NWY_YEARS}; usingExtra = true;
+          try{ localStorage.setItem(EXTRA_KEY, JSON.stringify({full, years:NWY_YEARS})); }catch(e){} extra = ' and the Full Summary'; } }
+    }catch(e){ extra = ' (Full Summary not readable)'; }
+    prefs.year = null; toast(`Loaded ${Object.keys(years).sort().join(', ')}${extra} from ${f.name}`); render();
   }catch(e){ toast(e.message || 'Couldn’t read that file. Pick the finances .xlsx.'); }
   ev.target.value = '';
 };
 document.getElementById('resetBtn').onclick = () => {
   try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+  try{ localStorage.removeItem(EXTRA_KEY); }catch(e){}
+  FULL = FULL_BUILTIN; NWY_YEARS = NWY_BUILTIN; NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:NWY_YEARS}; usingExtra = false;
   JOINT = BUILTIN_DATA; applySrc(); usingImport = false; prefs.year = null; toast('Using built-in figures'); render();
 };
 let tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,3200); }
@@ -684,7 +726,7 @@ function partsIn(ref, d){
 // (holidays, home projects…) are shown as actually spent so far. A cost is one-off if its
 // category is lumpy by nature, it's a known seasonal item, or its spending pattern says so
 // (most of the year's spend landed in one or two months — the parser's "lumpy" check).
-const ONE_OFF_CATS = new Set(['Mortgage overpayment','Holidays','Home projects','Parties & weddings','Annual payments']);
+const ONE_OFF_CATS = new Set(['Mortgage overpayment','House & holiday (capex)','Other transfers','Holidays','Home projects','Parties & weddings','Annual payments']);
 const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'Emily (one-off, April)','Ben (one-off)','Emily (one-off)']);
 function isOneOff(D, cat, item){
   if(ONE_OFF_CATS.has(cat)) return true;
@@ -782,9 +824,9 @@ function openCompare(n, year, fromYears){
   });
   html += `</div>`;
   document.getElementById('cmpTitle').textContent = only || title;
-  document.querySelector('#cmp .eyebrow').textContent = (isNW() ? 'Month by month' : 'Year by year') + (only ? ` · ${ref.cat}` : '');
+  document.querySelector('#cmp .eyebrow').textContent = (isStm() ? 'Month by month' : 'Year by year') + (only ? ` · ${ref.cat}` : '');
   const subEl = document.getElementById('cmpSub');
-  subEl.textContent = (hl && !only ? `${hl} highlighted · ` : '') + (isNW() ? 'every statement month drawn to the same scale' : 'all years drawn to the same scale') + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
+  subEl.textContent = (hl && !only ? `${hl} highlighted · ` : '') + (isStm() ? 'every statement month drawn to the same scale' : 'all years drawn to the same scale') + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
   if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year, fromYears); subEl.append(' · ', b); }
   if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year); subEl.prepend(b, ' · '); }
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
@@ -819,9 +861,9 @@ function openYears(mode, year){
   const safe = k => k.replace(/"/g,'&quot;');
 
   document.getElementById('cmpTitle').textContent = mode==='out' ? 'Where the money went' : 'Where the money came from';
-  document.querySelector('#cmp .eyebrow').textContent = (isNW() ? 'Month by month' : 'Year by year') + ' · whole picture';
+  document.querySelector('#cmp .eyebrow').textContent = (isStm() ? 'Month by month' : 'Year by year') + ' · whole picture';
   const subEl = document.getElementById('cmpSub');
-  subEl.textContent = 'Tap any block, flow or row to focus on it · same scale for every ' + (isNW() ? 'month' : 'year') + (mode==='out' ? ' · dashed line = money in' : '') + (cols.some(c=>c.D.months<12) ? ' · part years ongoing-costs pro-rated (≈)' : '') + ' · ';
+  subEl.textContent = 'Tap any block, flow or row to focus on it · same scale for every ' + (isStm() ? 'month' : 'year') + (mode==='out' ? ' · dashed line = money in' : '') + (cols.some(c=>c.D.months<12) ? ' · part years ongoing-costs pro-rated (≈)' : '') + ' · ';
   const sw = document.createElement('button'); sw.className = 'linkbtn'; sw.textContent = mode==='out' ? 'Show money in' : 'Show money out';
   sw.onclick = () => openYears(mode==='out' ? 'in' : 'out', year); subEl.append(sw);
 
@@ -900,19 +942,286 @@ function closeCompare(){ document.getElementById('cmp').hidden = true; document.
 document.getElementById('cmpX').onclick = closeCompare;
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeCompare(); });
 
+const FS_MON = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const FS_KIDS = "Kids' savings";
+function fsHeader(A){
+  const str = v => v==null ? '' : String(v).trim();
+  let mo = -1;
+  for(let r=0;r<12 && mo<0;r++){ const n = (A[r]||[]).filter(v => /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(str(v)) && str(v).length<=5).length; if(n>=6) mo = r; }
+  if(mo<1) return null;
+  const cols = [];
+  (A[mo]||[]).forEach((v,c) => { const m = FS_MON.indexOf(str(v).slice(0,3).toLowerCase()), y = +(A[mo-1]||[])[c];
+    if(m>=0 && str(v).length<=5 && y>=2000 && y<2100) cols.push({c, y, m, key:`${y}-${String(m+1).padStart(2,'0')}`}); });
+  return cols.length ? {cols, mo} : null;
+}
+function parseFullSummary(A){
+  const H = fsHeader(A); if(!H) return null;
+  const str = v => v==null ? '' : String(v).trim();
+  const num = v => typeof v === 'number' && v !== -1200 && isFinite(v) ? v : null;
+  const lab = r => str((A[r]||[])[0]), lab2 = r => str((A[r]||[])[1]);
+  const stop = A.findIndex((r,i) => i>H.mo && /^salary$/i.test(lab(i)));
+  const end = stop > 0 ? stop : Math.min(A.length, 60);
+  const assets = [], idx = {};
+  const add = (id, name, group, o={}) => { const a = {id, name, group, counted:o.counted!==false, memo:!!o.memo, series:{}}; idx[id] = a; assets.push(a); return a; };
+  const seen = {};
+  let santRow = -1, kidsInSantRow = -1;
+  const rowSeries = r => { const s = {}; H.cols.forEach(({c,key}) => { const v = num((A[r]||[])[c]); if(v!==null) s[key] = v; }); return s; };
+  for(let r=H.mo+1; r<end; r++){
+    const a = lab(r).toLowerCase(), b = lab2(r).toLowerCase(); if(!a) continue;
+    const s = rowSeries(r); let id = null;
+    if(a==='natwest' && /select/.test(b)){ add('nw-cur','NatWest current account','Cash'); id='nw-cur'; }
+    else if(a==='santander' && !/#2/.test(a)){ add('sant','Santander joint account','Cash'); id='sant'; santRow = r; }
+    else if(a==='ns&i'){ add('nsi','NS&I','Savings'); id='nsi'; }
+    else if(a==='natwest rewards'){ add('nw-rew','NatWest Rewards account','Cash'); id='nw-rew'; }
+    else if(a==='natwest reg saver'){ if(!idx['nw-reg']) add('nw-reg','NatWest regular saver','Savings'); id='nw-reg'; }
+    else if(a==='credit card'){ add('cc','Credit card','Liabilities'); id='cc'; }
+    else if(a==='reuben money in santander'){ add('reu-sant','Reuben (held in the Santander account)',FS_KIDS,{counted:false}); id='reu-sant'; kidsInSantRow = r; }
+    else if(a==='natwest savings'){ add('nw-sav','NatWest savings account','Savings'); id='nw-sav'; }
+    else if(a==='loan'){ add('loan','Loan funds held','Cash'); id='loan'; const l = add('loan-owed','Loan owed','Liabilities'); Object.keys(s).forEach(k => l.series[k] = -s[k]); }
+    else if(a==='lloyds'){ add('lloyds','Lloyds account','Cash'); id='lloyds'; }
+    else if(a==='halifax1'){ add('hal1','Halifax account','Cash'); id='hal1'; }
+    else if(a==='halifax2'){ add('hal2','Halifax account (2nd)','Cash'); id='hal2'; }
+    else if(a==='first direct'){ add('fd','First Direct','Cash'); id='fd'; }
+    else if(a==='hsbc'){ add('hsbc','HSBC','Cash',{counted:false}); id='hsbc'; }
+    else if(a==='santander #2'){ add('sant2','Santander #2','Cash',{counted:false}); id='sant2'; }
+    else if(/^boi 2nd mortgage/.test(a)){ add('boi','2nd-mortgage cash held (BOI)','Cash',{counted:false,memo:true}); id='boi'; }
+    else if(/^lloyds saving/.test(a)){ add('lloyds-sav','Lloyds monthly saver','Savings',{counted:false}); id='lloyds-sav'; }
+    else if(/^santander saver/.test(a)){ add('edge','Santander Edge saver','Savings',{counted:false}); id='edge'; }
+    else if(/^etoro £££ live/.test(a)){ add('etoro','eToro (£ account)','Investments'); id='etoro'; }
+    else if(/^natwest invest 5/.test(a)){ add('nwi5','NatWest Invest 5','Investments'); id='nwi5'; }
+    else if(/^natwest invest 3/.test(a)){ add('nwi3','NatWest Invest 3','Investments'); id='nwi3'; }
+    else if(a==='stocked'){ add('stocked','Stocked shares','Investments',{counted:false}); id='stocked'; }
+    else if(a==='vivien savings'){ add('viv','Vivien savings (HSBC)',FS_KIDS,{counted:false}); id='viv'; }
+    else if(a==='reuben savings' && /edge/.test(b)){ add('reu-edge','Reuben – Edge saver',FS_KIDS,{counted:false}); id='reu-edge'; }
+    else if(a==='reuben savings' && /halifax/.test(b)){ add('reu-hal','Reuben – Halifax kids saver',FS_KIDS,{counted:false}); id='reu-hal'; }
+    else if(/^etoro \$\$\$ invested/.test(a)){ id = null; }
+    if(id){ const t = idx[id]; Object.keys(s).forEach(k => { if(!(k in t.series) || id==='nw-reg' && t.series[k]===0) t.series[k] = s[k]; }); }
+    // the second regular-saver row (kept further down the sheet) fills the months the first one leaves blank
+    if(a==='natwest reg saver' && seen.reg){ /* merged above */ }
+    if(a==='natwest reg saver') seen.reg = true;
+  }
+  // the joint account balance includes Reuben's money; list his part separately and the rest as the joint account
+  if(idx.sant && idx['reu-sant']) Object.keys(idx.sant.series).forEach(k => { const k2 = idx['reu-sant'].series[k]; if(k2) idx.sant.series[k] -= k2; });
+  // eToro dollar account: live value if there is one, otherwise invested + return + cash
+  const ei = A.findIndex((r,i) => /^etoro \$\$\$ invested/i.test(lab(i)));
+  if(ei > 0){
+    const t = add('etoro-usd','eToro ($ account)','Investments',{counted:false});
+    const inv = rowSeries(ei), live = rowSeries(ei+1), ret = rowSeries(ei+2), cash = rowSeries(ei+3);
+    Object.keys({...inv, ...live}).forEach(k => { const v = live[k]!=null && live[k]!==0 ? live[k] : (inv[k]||0) + (ret[k]||0) + (cash[k]||0); if(v) t.series[k] = Math.round(v); });
+  }
+  const find = re => A.findIndex((r,i) => re.test(lab(i)));
+  const grab = re => { const r = find(re); return r>0 ? rowSeries(r) : {}; };
+  const out = {
+    months: [...new Set(H.cols.map(c => c.key))].sort(),
+    assets: assets.filter(a => Object.values(a.series).some(v => v)),
+    afterPots: grab(/^total minus emergency/i), pots: grab(/^sub liabilities/i), emergency: grab(/^emergency fund/i),
+  };
+  return out;
+}
+// Personal (NatWest) cash flow by year, from the Expenses section of the same sheet
+function parseCashFlowYears(A){
+  const H = fsHeader(A); if(!H) return null;
+  const str = v => v==null ? '' : String(v).trim();
+  const num = v => typeof v === 'number' && v !== -1200 && isFinite(v) ? v : null;
+  const lab = r => str((A[r]||[])[0]);
+  const exp = A.findIndex((r,i) => /^expenses$/i.test(lab(i))); if(exp<0) return null;
+  const rowOf = (re, from=exp) => { for(let r=from;r<A.length;r++) if(re.test(lab(r))) return r; return -1; };
+  const rInc = rowOf(/^income$/i), rDelta = rowOf(/^delta/i), rJoint = rowOf(/^joint account/i);
+  const rTrans = A.findIndex((r,i) => /^transfers out$/i.test(lab(i)));
+  if(rInc<0 || rDelta<0 || rJoint<0) return null;
+  const items = (from, to, filter) => { const o = []; for(let r=from; r<=to; r++){ const l = lab(r); if(l && (!filter || filter.test(l))) o.push([r, l]); } return o; };
+  const personal = []; for(let r=rDelta+2; r<A.length; r++){ if(!lab(r) && !str((A[r]||[])[1])) break; if(lab(r)) personal.push([r, lab(r)]); }
+  const lastPersonal = personal.length ? personal[personal.length-1][0] : rDelta+1;
+  const savings = items(lastPersonal+1, rJoint-1);
+  const capex = items(rJoint+1, A.length-1, /\(bg\)\s*$/i);
+  const years = {}; const names = {};
+  const nice = l => { const s = l.replace(/\s*\(bg\)\s*$/i,'').replace(/\s+/g,' ').trim(); return s.charAt(0).toUpperCase() + s.slice(1); };
+  const byYear = {}; H.cols.forEach(h => (byYear[h.y] = byYear[h.y] || []).push(h));
+  for(const y of Object.keys(byYear)){
+    const cols = byYear[y]; const sum = r => cols.reduce((t,h) => t + (num((A[r]||[])[h.c]) || 0), 0);
+    const months = cols.filter(h => num((A[rInc]||[])[h.c]) !== null).length;
+    const inc = sum(rInc); if(months < 3 || inc <= 0) continue;
+    const income = {}, out = {};
+    income['Income'] = Math.round(inc);
+    const tr = rTrans>0 ? sum(rTrans) : 0;
+    const jt = sum(rJoint); if(jt > 0) out['Paid into joint account'] = {'Regular payments & top-ups': Math.round(jt)};
+    if(tr > 0) out['Other transfers'] = {'Transfers to other accounts': Math.round(tr)}; else if(tr < 0) income['Transfers in'] = Math.round(-tr);
+    const pack = (arr, cat) => { const o = {}; arr.forEach(([r,l]) => { const v = Math.round(sum(r)); if(v) o[nice(l)] = (o[nice(l)]||0) + v; }); Object.keys(o).forEach(k => { if(o[k] <= 0){ delete o[k]; } }); if(Object.keys(o).length) out[cat] = o; };
+    const sv = savings.filter(([r,l]) => !/mortgage overpayment/i.test(l)), mo = savings.filter(([r,l]) => /mortgage overpayment/i.test(l));
+    const wd = sv.reduce((t,[r]) => { const v = sum(r); return v < 0 ? t - v : t; }, 0);
+    if(wd > 0) income['Withdrawn from savings'] = Math.round(wd);
+    mo.forEach(([r]) => { const v = Math.round(sum(r)); if(v > 0) out['Mortgage overpayment'] = {'Overpayment': v}; });
+    pack(sv, 'Savings & investing'); pack(capex, 'House & holiday (capex)'); pack(personal, 'Personal spending');
+    years[y] = {months, income, out, note: months<12 ? `Only ${months} months of this year are filled in on the sheet.` : ''};
+  }
+  return Object.keys(years).length ? years : null;
+}
+const mLabel = m => { const [y,mm] = m.split('-'); return MON[+mm-1] + ' ' + y; };
+const gColor = g => ({Cash:css('--c-home'), Savings:css('--c-spend'), Investments:css('--c-annual'), Liabilities:css('--c-gap'), [FS_KIDS]:css('--c-kids')}[g] || css('--c-in'));
+const signed = v => (v<0 ? '−' : '') + gbp(Math.abs(v));
+function fullModel(){
+  const F = FULL, real = F.assets.filter(a => !a.memo);
+  const has = m => real.some(a => a.group!==FS_KIDS && a.series[m]!=null);
+  const inv = F.assets.find(a => a.id==='nwi5');
+  const invMonths = inv ? Object.keys(inv.series).sort() : [];
+  const all = F.months.filter(has);
+  const through = invMonths.length ? invMonths[invMonths.length-1] : all[all.length-1];
+  const months = all.filter(m => m <= through);
+  const at = (m, kids) => { const o = {Cash:0, Savings:0, Investments:0, Liabilities:0, [FS_KIDS]:0};
+    real.forEach(a => { if(a.group===FS_KIDS && !kids) return; o[a.group] += a.series[m] || 0; });
+    o.total = o.Cash + o.Savings + o.Investments + o.Liabilities + (kids ? o[FS_KIDS] : 0); return o; };
+  return {F, real, months, through, all, latest: all[all.length-1], at};
+}
+function renderWorth(){
+  const M = fullModel(), el = document.getElementById('worthView'), kids = !!prefs.kids, ms = M.months;
+  if(!ms.length){ el.innerHTML = '<p class="note">No asset history found. Load a workbook with a “Full Summary” sheet.</p>'; return; }
+  const vals = ms.map(m => M.at(m, kids)), last = vals[vals.length-1], lastM = ms[ms.length-1];
+  const yAgo = ms.length > 12 ? vals[ms.length-13] : null;
+  const pk = vals.reduce((b,v,i) => v.total > b.v ? {v:v.total, i} : b, {v:-Infinity, i:0});
+  const ch = yAgo ? last.total - yAgo.total : null;
+  const cashNow = M.at(M.latest, kids), later = M.latest > M.through;
+  el.innerHTML = `
+    <div class="stats">
+      <div class="stat"><span class="k">Net worth</span><span class="v">${signed(last.total)}</span><span class="s">${mLabel(lastM)}${kids?' · with kids’ savings':''}</span></div>
+      <div class="stat"><span class="k">Last 12 months</span><span class="v ${ch==null?'':ch<0?'neg':'pos'}">${ch==null?'—':(ch<0?'−':'+')+gbp(Math.abs(ch))}</span><span class="s">${yAgo?'since '+mLabel(ms[ms.length-13]):''}</span></div>
+      <div class="stat"><span class="k">Peak</span><span class="v">${signed(pk.v)}</span><span class="s">${mLabel(ms[pk.i])}</span></div>
+    </div>
+    <div class="card w-card">
+      <div class="w-head"><label class="chk"><input type="checkbox" id="kidsChk" ${kids?'checked':''}> Include kids’ savings</label>
+        <span class="w-key">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span>`).join('')}<span><i class="ln"></i>Net worth</span><span><i class="ln dash"></i>Free after pots</span></span></div>
+      <svg id="wSvg" role="img" aria-label="Net worth over time, stacked by cash, savings and investments"></svg>
+      <div id="wRead" class="w-read"></div>
+    </div>
+    <h2>Year by year</h2>
+    <div class="tbl-wrap"><table class="w-tbl"><thead><tr><th>As at</th><th>Cash</th><th>Savings</th><th>Invest.</th><th>Debts</th><th>Net worth</th><th>Change</th></tr></thead><tbody id="wTbl"></tbody></table></div>
+    <p class="note">${later ? `Savings and investments are only filled in on the sheet up to ${mLabel(M.through)}, so the chart stops there. ` : ''}Kids’ savings are left out unless you tick the box. This differs a little from the totals on your sheet: it leaves out the children’s money held in the Santander account, nets off loans, and counts the regular saver in every month. The 2nd-mortgage cash held in 2022–23 is borrowed, so it isn’t counted. “Free after pots” is your sheet’s own figure after earmarked pots and the £4,000 emergency fund. Pensions, the house, the mortgage and the student loan aren’t on this sheet yet.</p>`;
+  document.getElementById('kidsChk').onchange = e => { prefs.kids = e.target.checked; savePrefs(); renderWorth(); };
+  // year table: each December, plus the latest month
+  const rows = ms.filter(m => m.endsWith('-12')); if(!rows.includes(lastM)) rows.push(lastM);
+  document.getElementById('wTbl').innerHTML = rows.map((m,i) => { const v = M.at(m, kids), p = i ? M.at(rows[i-1], kids) : null, d = p ? v.total - p.total : null;
+    return `<tr data-m="${m}"><td>${mLabel(m)}</td><td>${gbp(v.Cash)}</td><td>${gbp(v.Savings)}</td><td>${gbp(v.Investments)}</td><td>${v.Liabilities ? signed(v.Liabilities) : '–'}</td><td><b>${signed(v.total)}</b></td><td class="${d==null?'':d<0?'neg':'pos'}">${d==null?'':(d<0?'−':'+')+gbp(Math.abs(d))}</td></tr>`; }).join('');
+  document.querySelectorAll('#wTbl tr').forEach(r => r.onclick = () => { prefs.asof = r.dataset.m; prefs.src = 'assets'; savePrefs(); render(); });
+  // chart
+  const svgEl = document.getElementById('wSvg'), W = Math.max(280, svgEl.parentNode.clientWidth - 4), H = 290, L = 46, R = 8, T = 10, B = 22;
+  const n = ms.length, x = i => L + (W-L-R) * (n>1 ? i/(n-1) : 0);
+  const layers = ['Cash','Savings','Investments'].concat(kids ? [FS_KIDS] : []);
+  const topAt = vals.map(v => layers.reduce((s,g) => s + Math.max(v[g],0), 0));
+  const maxY = Math.max(...topAt, ...vals.map(v=>v.total), 1) * 1.06, minY = Math.min(0, ...vals.map(v=>v.Liabilities)) * 1.2;
+  const y = v => T + (maxY - v) / (maxY - minY) * (H - T - B);
+  const svg = d3.select(svgEl).attr('width', W).attr('height', H).attr('viewBox', `0 0 ${W} ${H}`); svg.selectAll('*').remove();
+  d3.ticks(minY, maxY, 5).forEach(t => { svg.append('line').attr('x1',L).attr('x2',W-R).attr('y1',y(t)).attr('y2',y(t)).attr('stroke', css('--line')).attr('stroke-width', t===0?1.2:.6);
+    svg.append('text').attr('x',L-5).attr('y',y(t)).attr('dy','0.32em').attr('text-anchor','end').attr('class','ax').text(t===0?'£0':compact(t)); });
+  let lastX = -99; ms.forEach((m,i) => { if(!(i===0 || m.endsWith('-01')) || x(i)-lastX < 34) return; lastX = x(i); svg.append('text').attr('x',x(i)).attr('y',H-6).attr('text-anchor', i===0?'start':'middle').attr('class','ax').text(m.slice(0,4)); });
+  const cum = vals.map(() => 0);
+  layers.forEach(g => { const a = vals.map((v,i) => { const b = cum[i]; cum[i] += Math.max(v[g],0); return [b, cum[i]]; });
+    const area = d3.area().x((d,i)=>x(i)).y0(d=>y(d[0])).y1(d=>y(d[1])).curve(d3.curveMonotoneX);
+    svg.append('path').attr('d', area(a)).attr('fill', gColor(g)).attr('fill-opacity', .82); });
+  if(vals.some(v=>v.Liabilities<0)){ const area = d3.area().x((d,i)=>x(i)).y0(y(0)).y1(d=>y(d)).curve(d3.curveMonotoneX);
+    svg.append('path').attr('d', area(vals.map(v=>v.Liabilities))).attr('fill', gColor('Liabilities')).attr('fill-opacity', .8); }
+  const line = d3.line().x((d,i)=>x(i)).y(d=>y(d)).curve(d3.curveMonotoneX);
+  svg.append('path').attr('d', line(vals.map(v=>v.total))).attr('fill','none').attr('stroke', css('--paper')).attr('stroke-width', 2);
+  const fp = ms.map(m => M.F.afterPots[m]), fpPts = fp.map((v,i) => v==null ? null : [i,v]).filter(Boolean);
+  if(fpPts.length > 2) svg.append('path').attr('d', d3.line().x(d=>x(d[0])).y(d=>y(d[1])).curve(d3.curveMonotoneX)(fpPts)).attr('fill','none').attr('stroke', css('--paper')).attr('stroke-width', 1.5).attr('stroke-dasharray','4 3');
+  const rule = svg.append('line').attr('y1',T).attr('y2',H-B).attr('stroke', css('--paper')).attr('stroke-width',1).attr('opacity',0);
+  const dot = svg.append('circle').attr('r',4).attr('fill', css('--paper')).attr('opacity',0);
+  const read = document.getElementById('wRead');
+  const show = i => { const v = vals[i], m = ms[i], f = M.F.afterPots[m];
+    rule.attr('x1',x(i)).attr('x2',x(i)).attr('opacity',.6); dot.attr('cx',x(i)).attr('cy',y(v.total)).attr('opacity',1);
+    read.innerHTML = `<div class="r-top"><b>${mLabel(m)}</b><span class="mono">${signed(v.total)}</span></div>
+      <div class="r-grid">${['Cash','Savings','Investments'].concat(kids?[FS_KIDS]:[]).map(g=>`<span><i style="background:${gColor(g)}"></i>${g}</span><b class="mono">${gbp(v[g])}</b>`).join('')}${v.Liabilities?`<span><i style="background:${gColor('Liabilities')}"></i>Debts</span><b class="mono">${signed(v.Liabilities)}</b>`:''}${f!=null?`<span><i class="ln dash"></i>Free after pots</span><b class="mono">${signed(f)}</b>`:''}</div>
+      <button class="linkbtn" id="toAssets">See the asset list for ${mLabel(m)} →</button>`;
+    document.getElementById('toAssets').onclick = () => { prefs.asof = m; prefs.src = 'assets'; savePrefs(); render(); }; };
+  const pick = ev => { const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width); show(Math.max(0, Math.min(n-1, Math.round((px - L) / (W-L-R) * (n-1))))); };
+  svg.append('rect').attr('x',L).attr('y',T).attr('width',W-L-R).attr('height',H-T-B).attr('fill','transparent').style('touch-action','pan-y').style('cursor','crosshair')
+    .on('pointermove', pick).on('pointerdown', pick);
+  show(n-1);
+}
+function spark(vals, w, h, color){
+  const pts = vals.filter(v => v!=null); if(pts.length < 2) return '';
+  const lo = Math.min(...pts, 0), hi = Math.max(...pts, 1), n = vals.length;
+  const d = vals.map((v,i) => v==null ? null : `${(i/(n-1)*w).toFixed(1)},${(h - (v-lo)/(hi-lo||1)*(h-2) - 1).toFixed(1)}`).filter(Boolean);
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${d.join(' ')}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+function bigLine(a, months, color){
+  const W = 520, H = 120, ks = months.filter(m => a.series[m]!=null); if(ks.length < 2) return '';
+  const vs = ks.map(m => a.series[m]), lo = Math.min(0, ...vs), hi = Math.max(...vs, 1), pos = ks.map((m,i) => [i/(ks.length-1)*(W-4)+2, H - 16 - (a.series[m]-lo)/(hi-lo||1)*(H-26)]);
+  const pk = vs.indexOf(Math.max(...vs));
+  return `<svg class="big-line" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${pos.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="2"/><circle cx="${pos[pk][0]}" cy="${pos[pk][1]}" r="3.5" fill="${color}"/></svg>`;
+}
+const openAssets = new Set();
+function renderAssets(){
+  const M = fullModel(), el = document.getElementById('assetsView'), all = M.all;
+  const mode = prefs.asof && prefs.asof!=='latest' && all.includes(prefs.asof) ? prefs.asof : 'latest';
+  const ref = mode==='latest' ? M.latest : mode;
+  const keyOf = a => { if(mode!=='latest') return a.series[mode]!=null ? mode : null; const ks = Object.keys(a.series).filter(k => a.series[k]!=null && k<=M.latest).sort(); return ks.length ? ks[ks.length-1] : null; };
+  const yearAgo = m => { const [y,mm] = m.split('-'); return `${+y-1}-${mm}`; };
+  const rows = M.F.assets.map(a => { const k = keyOf(a), v = k ? a.series[k] : null;
+    const prevK = k ? yearAgo(k) : null, pv = prevK ? a.series[prevK] : null;
+    const hist = all.filter(m => m <= (k||ref)).slice(-36).map(m => a.series[m] ?? null);
+    return {a, k, v, change: v!=null && pv!=null ? v - pv : null, hist}; });
+  const live = r => r.v!=null && Math.abs(r.v) >= 0.5;
+  const order = ['Cash','Savings','Investments','Liabilities',FS_KIDS];
+  const tot = g => rows.filter(r => r.a.group===g && !r.a.memo && live(r)).reduce((s,r) => s + r.v, 0);
+  const mine = tot('Cash') + tot('Savings') + tot('Investments'), debts = tot('Liabilities'), kidsT = tot(FS_KIDS);
+  const sec = g => { const rs = rows.filter(r => r.a.group===g && !r.a.memo); const lv = rs.filter(live).sort((x,y) => Math.abs(y.v)-Math.abs(x.v)), gone = rs.filter(r => !live(r) && r.k);
+    if(!lv.length && !gone.length) return '';
+    const gt = lv.reduce((s,r) => s + r.v, 0), base = g==='Liabilities' ? 0 : (g===FS_KIDS ? kidsT : mine) || 1;
+    return `<section class="as-sec"><div class="as-head"><i style="background:${gColor(g)}"></i><h3>${g==='Liabilities'?'Debts':g}</h3><span class="mono">${signed(gt)}</span>${g!=='Liabilities' && g!==FS_KIDS ? `<span class="pct">${Math.round(gt/mine*100)}%</span>` : ''}</div>
+      ${g===FS_KIDS?'<p class="note" style="margin:0 0 6px">Held for the children, so not counted in your net worth.</p>':''}
+      <ul class="as-list">${lv.map(r => rowHtml(r, base, g)).join('')}</ul>
+      ${gone.length ? `<details class="as-gone"><summary>${gone.length} closed or empty</summary><ul class="as-list">${gone.map(r => rowHtml(r, 1, g, true)).join('')}</ul></details>` : ''}</section>`; };
+  const rowHtml = (r, base, g, gone) => { const a = r.a, open = openAssets.has(a.id), stale = r.k && r.k !== ref && mode==='latest';
+    const peakK = Object.keys(a.series).reduce((b,k) => (a.series[k] > (a.series[b] ?? -Infinity) ? k : b), Object.keys(a.series)[0]);
+    const firstK = Object.keys(a.series).filter(k => a.series[k]).sort()[0], lastK = Object.keys(a.series).filter(k => a.series[k]).sort().pop();
+    return `<li class="as-row${open?' open':''}" data-id="${a.id}"><button class="as-main" aria-expanded="${open}">
+        <span class="nm">${a.name}${a.counted?'':' <em class="nc" title="Not in your sheet’s own total">not in sheet total</em>'}${stale?` <em class="nc">as of ${mLabel(r.k)}</em>`:''}</span>
+        <span class="sp">${gone ? '' : spark(r.hist, 64, 20, gColor(g))}</span>
+        <span class="am mono">${gone ? '–' : signed(r.v)}</span>
+        <span class="chg ${r.change==null?'':(g==='Liabilities'? r.change>0 : r.change<0)?'neg':'pos'}">${r.change==null?'':(r.change<0?'▼ ':'▲ ')+gbp(Math.abs(r.change))}</span>
+        ${gone ? '' : `<span class="bar-sh"><i style="width:${Math.min(100,Math.max(0,Math.abs(r.v)/Math.abs(base)*100)).toFixed(1)}%;background:${gColor(g)}"></i></span>`}
+      </button>
+      ${open ? `<div class="as-det">${bigLine(a, all, gColor(g))}<div class="facts"><span>First: <b>${firstK?mLabel(firstK):'–'}</b></span><span>Peak: <b>${gbp(a.series[peakK]||0)}</b> · ${peakK?mLabel(peakK):''}</span><span>Last: <b>${lastK?mLabel(lastK):'–'}</b></span></div></div>` : ''}</li>`; };
+  const memo = rows.filter(r => r.a.memo && r.k);
+  el.innerHTML = `
+    <div class="stats">
+      <div class="stat"><span class="k">Assets</span><span class="v">${gbp(mine)}</span><span class="s">cash, savings, investments</span></div>
+      <div class="stat"><span class="k">Debts</span><span class="v ${debts<0?'neg':''}">${debts?signed(debts):'£0'}</span><span class="s">credit card, loans</span></div>
+      <div class="stat"><span class="k">Net worth</span><span class="v">${signed(mine+debts)}</span><span class="s">${mode==='latest'?'latest known':mLabel(mode)}</span></div>
+    </div>
+    <div class="as-bar"><label>As at <select id="asofSel"><option value="latest"${mode==='latest'?' selected':''}>Latest known</option>${[...M.months].reverse().map(m=>`<option value="${m}"${m===mode?' selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
+      <span class="note" style="margin:0">Tap an account for its history${mode==='latest'?'. Each account shows its latest figure; the date is shown where it’s older':''}.</span></div>
+    ${order.map(sec).join('')}
+    ${memo.length ? `<section class="as-sec"><div class="as-head"><i style="background:${css('--c-in')}"></i><h3>Not counted</h3></div><ul class="as-list">${memo.map(r => rowHtml(r, 1, 'Cash', !live(r))).join('')}</ul><p class="note">Borrowed money from the 2nd mortgage while the extension was built, so it isn’t treated as an asset.</p></section>` : ''}
+    <p class="note">Built from the Full Summary sheet. Accounts marked “not in sheet total” are ones your own total leaves out; they are included here so the list is complete.</p>`;
+  document.getElementById('asofSel').onchange = e => { prefs.asof = e.target.value; savePrefs(); renderAssets(); };
+  el.querySelectorAll('.as-row').forEach(li => li.querySelector('.as-main').onclick = () => { const id = li.dataset.id; openAssets.has(id) ? openAssets.delete(id) : openAssets.add(id); renderAssets(); });
+}
+
 // ── page ──
 function render(){
   applySrc();
-  const yrs = Object.keys(DATA.years).sort();
-  if(!prefs.year || !DATA.years[prefs.year]) prefs.year = isNW() ? 'ALL' : (yrs.find(y=>DATA.years[y].months>=12 && y===String(new Date().getFullYear()-1)) || yrs[yrs.length-1]);
-  document.getElementById('yearsBtn').textContent = isNW() ? 'Compare months' : 'Compare all years';
-  document.querySelector('.top .eyebrow').textContent = isNW() ? 'Ben’s NatWest · personal account' : 'Joint account · where it all went';
-  document.getElementById('srcTabs').innerHTML = [['joint','Joint account'],['nw','Ben’s NatWest']].map(([k,t])=>`<button class="src-tab${prefs.src===k?' active':''}" data-s="${k}">${t}</button>`).join('');
+  const flow = isFlow();
+  document.getElementById('flowView').hidden = !flow;
+  document.getElementById('worthView').hidden = prefs.src !== 'worth';
+  document.getElementById('assetsView').hidden = prefs.src !== 'assets';
+  document.getElementById('yearsBtn').hidden = !flow;
+  document.getElementById('zoomHint').hidden = !flow;
+  document.getElementById('yearTabs').hidden = !flow;
+  const tabs = [['joint','Joint account'],['nw','Ben’s cash flow'],['worth','Net worth'],['assets','Assets']];
+  document.getElementById('srcTabs').innerHTML = tabs.map(([k,t])=>`<button class="src-tab${prefs.src===k?' active':''}" data-s="${k}">${t}</button>`).join('');
   document.querySelectorAll('.src-tab').forEach(b=>b.onclick=()=>{ if(prefs.src===b.dataset.s) return; prefs.src=b.dataset.s; prefs.year=null; savePrefs(); setTimeout(render,0); });
+  const vt = document.getElementById('viewTabs'); vt.hidden = !isNW();
+  vt.innerHTML = isNW() ? [['years','By year'],['stmts','By statement']].map(([k,t])=>`<button class="sub-tab${prefs.nwView===k?' active':''}" data-v="${k}">${t}</button>`).join('') : '';
+  vt.querySelectorAll('.sub-tab').forEach(b=>b.onclick=()=>{ prefs.nwView=b.dataset.v; prefs.year=null; savePrefs(); setTimeout(render,0); });
+  document.querySelector('.top .eyebrow').textContent = ({joint:'Joint account · where it all went', nw:'Ben’s NatWest · personal account', worth:'Net worth · cash, savings and investments', assets:'Every account, savings pot and investment'})[prefs.src] || '';
+  document.getElementById('resetBtn').hidden = !(flow && !isNW() && usingImport) && !(usingExtra && !flow);
+  if(!flow){ document.getElementById('legend').innerHTML = ''; if(prefs.src === 'worth') renderWorth(); else renderAssets(); return; }
+  const yrs = Object.keys(DATA.years).sort();
+  if(!prefs.year || !DATA.years[prefs.year]) prefs.year = isStm() ? 'ALL' : (yrs.find(y=>DATA.years[y].months>=12 && y===String(new Date().getFullYear()-1)) || yrs[yrs.length-1]);
+  document.getElementById('yearsBtn').textContent = isStm() ? 'Compare months' : 'Compare all years';
   document.getElementById('yearTabs').classList.toggle('many', yrs.length > 6);
   const year = prefs.year, d = DATA.years[year];
-  document.getElementById('resetBtn').hidden = isNW() || !usingImport;
-  document.getElementById('src').textContent = DATA.source + '.';
+    document.getElementById('src').textContent = DATA.source + '.';
   document.getElementById('yearTabs').innerHTML = yrs.map(y=>{
     const m = DATA.years[y].months;
     return `<button class="yr-tab${y===year?' active':''}" role="tab" aria-selected="${y===year}" data-y="${y}">${lab(y)}<span class="sub">${DATA.subs ? DATA.subs[y] : m>=12?'full year':'Jan–'+MON[m-1]}</span></button>`;
@@ -924,7 +1233,10 @@ function render(){
     <div class="stat"><span class="k">Money in</span><span class="v">${gbp(g.inTot)}</span><span class="s">${DATA.subs ? DATA.subs[year] : yearLabel(year,d.months)}</span></div>
     <div class="stat"><span class="k">Money out</span><span class="v">${gbp(g.outTot)}</span><span class="s">${isNW() ? Math.round(total(d.out['Paid into joint account']||0)/g.outTot*100)+'% paid into the joint account' : Math.round(mort/g.outTot*100)+'% on the mortgage'}</span></div>
     <div class="stat"><span class="k">Net</span><span class="v ${net<0?'neg':'pos'}">${net<0?'−':'+'}${gbp(Math.abs(net))}</span><span class="s">${net<0?'Spent more than came in':'Left in the account'}</span></div>`;
-  document.getElementById("note").textContent = d.note || '';
+  let nt = d.note || '';
+  if(!isStm() && isNW() && !nt){ const pm = y => total(DATA.years[y].income)/Math.max(DATA.years[y].months,1), others = Object.keys(DATA.years).filter(y=>y!==year).map(pm).sort((a,b)=>a-b);
+    if(others.length >= 2 && pm(year) > 1.8*others[Math.floor(others.length/2)]) nt = 'Income looks high for this year (about '+gbp(pm(year))+' a month against '+gbp(others[Math.floor(others.length/2)])+' in other years). The sheet probably counts transfers between your own accounts as income, so treat the net figure with care.'; }
+  document.getElementById("note").textContent = nt;
   drawChart(d, year);
 
   const fams = [...new Set(Object.keys(d.out).map(k=>CATS[k]||'home'))];
@@ -939,7 +1251,7 @@ function render(){
 
 function renderTie(){
   const el = document.getElementById('tie');
-  if(!isNW()){ el.hidden = true; return; }
+  if(!isStm()){ el.hidden = true; return; }
   const f2 = v => '£' + v.toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
   const rows = NW_DATA.stmts.map(z => {
     const bad = Math.abs(z.missing) >= 0.005;
