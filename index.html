@@ -36,6 +36,13 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.9.0 — Bank statements are the source of truth. NatWest calendar years the
+           statements cover (2026) are built from NW_TXNS (stmtYear), with day-to-day
+           spend named to match the sheet's Personal spending items; the sheet is only
+           used for years without statements. Statement lines missing from the itemised
+           list are added back from the statement totals (itemiseGaps). Sprive top-ups,
+           TOP UP RETURNs and matched MIRA expense claims (MIRA_CLAIMS) net off.
+           Anything that doesn't add up is listed under "Worth checking" (CHECKS).
   v1.5.1 — Year comparison labels get a small ▲/▼ % against the year before
            (red = spent more, green = spent less; "new" if absent last year).
   v1.5.0 — One-off vs ongoing logic (isOneOff). Part years only pro-rate ongoing
@@ -282,6 +289,8 @@
   .st-stack{flex:1; width:100%; max-width:42px; display:flex; flex-direction:column-reverse; gap:1px;} .st-stack i{display:block; border-radius:2px; min-height:1px;}
   .st-amt{font-size:9.5px; color:var(--paper-dim); height:14px;} .st-m{font-size:11px; color:var(--paper-dim); padding-top:4px;}
   .st-key{list-style:none; margin:10px 0 0; padding:0 6px; display:grid; gap:3px; font-size:12.5px;} .st-key li{display:flex; align-items:center; gap:7px;} .st-key i{width:10px; height:10px; border-radius:2px; flex:none;} .st-key .mono{margin-left:auto; color:var(--paper-dim);}
+  .checks{list-style:none; margin:10px 14px 4px; padding:10px 12px; border:1px solid #e8b04a; background:rgba(237,161,0,.08); border-radius:10px; font-size:12.5px; line-height:1.45; display:grid; gap:6px;}
+  .checks .ck-h{font-weight:700; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#b07800;} .checks li:not(.ck-h)::before{content:'⚠ '; color:#b07800;}
   .txns{margin:18px 0 8px;} .txns h3{font-size:15px; margin:0 0 4px; display:flex; justify-content:space-between; gap:10px;}
   .tx-m{display:flex; justify-content:space-between; font-size:12px; color:var(--paper-dim); border-bottom:1px solid var(--line); padding:8px 0 3px; margin-top:6px;}
   .tx-list{list-style:none; margin:0; padding:0;} .tx-list li{border-bottom:1px solid var(--line); cursor:pointer; padding:6px 0;}
@@ -335,6 +344,7 @@
     </div>
     <div class="legend" id="legend"></div>
     <p class="note" id="note"></p>
+    <ul class="checks" id="checks" hidden></ul>
   </div>
   <p class="src" id="src"></p>
 
@@ -357,7 +367,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.26';
+const APP_VERSION = '1.9.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -381,6 +391,30 @@ const NW_TXNS = [["2025-12-15",-250.0,"OnLine Transaction JOINTHAVELOCK Top up V
 // Sprive top-ups (bought on Ben's card because Sprive wouldn't take the joint Santander card) are the
 // joint account's food shop, and the joint account pays them straight back ("TOP UP ASDA" etc.).
 // Net them off both sides so they don't show as personal food spend or as income.
+// Things that don't add up get collected here and shown above the chart (see renderChecks).
+// src: 'nw' | 'joint' | 'all'; year: the year it concerns, or null for every year.
+const gbp2 = v => '£' + Math.abs(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+const CHECKS = [];
+// Each statement's in/out totals are the truth. Where the itemised lines don't add up to them, the
+// category totals still hold the missing amounts; add those back as un-itemised lines on the
+// statement's last day so per-transaction views and calendar years match the statements.
+(function itemiseGaps(){
+  const MO = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+  const per = d => { const [y,m,dd] = d.split('-').map(Number), n = dd >= 14 ? m + 1 : m; return n > 12 ? `${y+1}-01` : `${y}-${String(n).padStart(2,'0')}`; };
+  for(const z of NW_DATA.stmts){
+    const rows = NW_TXNS.filter(t => per(t[0]) === z.key), out = rows.filter(t => t[1] < 0).reduce((a,t) => a - t[1], 0), inn = rows.filter(t => t[1] > 0).reduce((a,t) => a + t[1], 0);
+    if(Math.abs(out - z.wd) < 0.005 && Math.abs(inn - z.pin) < 0.005) continue;
+    const D = NW_DATA.years[z.key], have = {}; rows.filter(t => t[3] !== 'in').forEach(t => { const k = t[3]+'\u0001'+t[4]; have[k] = (have[k]||0) - t[1]; });
+    const m = z.range.match(/(\d+)\s+([A-Z][a-z]{2})\s*$/), end = m ? `${z.key.slice(0,4)}-${String(MO[m[2]]).padStart(2,'0')}-${m[1].padStart(2,'0')}` : rows[rows.length-1][0];
+    const added = [];
+    for(const [c, items] of Object.entries(D.out)) for(const [i, v] of Object.entries(items)){
+      const gap = +(v - (have[c+'\u0001'+i] || 0)).toFixed(2);
+      if(gap > 0.005){ NW_TXNS.push([end, -gap, `Not itemised on the statement (${i}, ${z.range} total)`, c, i, 'gap']); added.push(`${i} ${gbp2(gap)}`); }
+    }
+    if(added.length) CHECKS.push({src:'nw', year:end.slice(0,4), text:`The ${z.range} statement total includes ${gbp2(z.wd - out)} of payments that aren’t itemised (${added.join(', ')}). They’re counted, dated ${+m[1]} ${m[2]}.`});
+  }
+  NW_TXNS.sort((a,b) => a[0].localeCompare(b[0]));
+})();
 const SPRIVE_NET = {};   // per calendar year, Sprive spend the joint account paid back
 (function netSprive(){
   const ITEM = 'ASDA (via Sprive)', BACK = 'Back from joint account';
@@ -402,7 +436,7 @@ const SPRIVE_NET = {};   // per calendar year, Sprive spend the joint account pa
   }
   Object.values(NW_DATA.years).forEach(D => delete D._k);
   NW_TXNS.forEach(t => {
-    if(/SPRIVE/i.test(t[2]) || (t[4]===BACK && /TOP UP (?!RETURN)/i.test(t[2]))){ t[3] = 'Covered by joint account'; t[4] = 'Sprive top-ups'; }
+    if(/SPRIVE/i.test(t[2]) || t[4]===ITEM || (t[4]===BACK && /TOP UP (?!RETURN)/i.test(t[2]))){ t[3] = 'Covered by joint account'; t[4] = 'Sprive top-ups'; }
     else if(t[4]===BACK && /TOP UP RETURN/i.test(t[2])){ t[3] = 'Paid into joint account'; t[4] = 'Top-ups'; }   // shows as a refund on the top-ups
   });
 })();
@@ -436,7 +470,10 @@ const MIRA_CLAIMS = [
     for(const k of [per(credit[0]), 'ALL']){ const D = NW_DATA.years[k]; if(!D || D.income['Other pay (MIRA)'] == null) continue;
       D.income['Other pay (MIRA)'] = +(D.income['Other pay (MIRA)'] - covered).toFixed(2); if(D.income['Other pay (MIRA)'] < 0.005) delete D.income['Other pay (MIRA)']; }
     [...rows, credit].forEach(t => { t[3] = 'Expensed to MIRA'; t[4] = cl.label; });
+    if(credit[1] - covered > 0.005) CHECKS.push({src:'nw', year:credit[0].slice(0,4), text:`MIRA paid ${gbp2(credit[1])} for “${cl.label}”, but the costs on your card come to ${gbp2(spent)} after refunds. The other ${gbp2(credit[1]-covered)} is counted as income from MIRA until it’s clear what it was for.`});
   }
+  const loose = NW_TXNS.filter(t => t[4]==='Other pay (MIRA)');
+  if(loose.length) CHECKS.push({src:'nw', year:null, text:`${loose.length} payment${loose.length>1?'s':''} from MIRA (${loose.map(t => gbp2(t[1])+' on '+t[0].slice(8)+'/'+t[0].slice(5,7)).join(', ')}) don’t match any spending on your card, so they’re counted as income.`});
 })();
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
@@ -459,7 +496,69 @@ const lessSprive = years => { const y = JSON.parse(JSON.stringify(years));
   for(const [yr, n] of Object.entries(SPRIVE_NET)){ const ps = y[yr] && y[yr].out && y[yr].out['Personal spending'];
     if(!ps || !ps.Food) continue; ps.Food = Math.round(Math.max(0, ps.Food - n)); if(!ps.Food) delete ps.Food; }
   return y; };
-let NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:lessSprive(NWY_YEARS)};
+// Calendar years the NatWest statements fully cover are built from the statements, not the sheet.
+// Day-to-day spending is named to line up with the sheet's "Personal spending" items where the two match.
+const STMT_TO_SHEET = (c, i) =>
+  c==='Food shop' ? 'Food' :
+  c==='Work & lunches' ? (i==='Thomas Franks (canteen)' ? 'MIRA' : 'Cafes & takeaways') :
+  c==='Shopping' ? (i==='Amazon' ? 'Amazon' : 'Etsy, eBay, Vinted & other') :
+  c==='Subscriptions & apps' ? (i==='Apple' ? 'Apple' : i==='Smarty (phone)' ? 'Phone contract' : i) :
+  c==='Hobbies & leisure' ? (i==='Tennis' ? 'Tennis/swim' : i==='Card games' ? 'DnD' : i) :
+  c==='Eating out' ? 'Out out' : c==='Cash' ? 'CASH' : c==='Other' ? 'Misc' :
+  c==='Student loan & tax' ? (i==='Self-assessment' ? 'Tax man' : i) : i || c;
+const STMT_KEEP = new Set(['Paid into joint account', 'Savings & investing']);
+const stmtPlace = t => {   // [kind, category, item] a statement line lands on in a statement-built year
+  if(t[3]==='in') return ['in', null, /^From (own savings|NatWest Invest)$/.test(t[4]) ? 'Withdrawn from savings' : t[4]];
+  if(t[3]==='Expensed to MIRA') return ['net', 'Other pay (MIRA)', null];
+  if(t[3]==='Covered by joint account') return ['net', 'Back from joint account', null];
+  if(STMT_KEEP.has(t[3])) return ['out', t[3], t[4]];
+  return ['out', 'Personal spending', STMT_TO_SHEET(t[3], t[4])];
+};
+const STMT_SPAN = (() => { const d = NW_TXNS.map(t => t[0]).sort(); return [d[0], d[d.length-1]]; })();
+function stmtYear(y){
+  const first = new Date(y+'-01-01'), last = new Date(STMT_SPAN[1] < `${y}-12-31` ? STMT_SPAN[1] : `${y}-12-31`);
+  if(STMT_SPAN[0] > `${y}-01-05` || last < first) return null;
+  const rows = NW_TXNS.filter(t => t[0].startsWith(y));
+  const span = Math.min(12, +((last - first) / 864e5 / (365.25/12) + 1/30).toFixed(2));
+  const income = {}, out = {}, net = {}, byMonth = {};
+  for(const t of rows){
+    const [kind, c, i] = stmtPlace(t);
+    if(kind==='in'){ income[i] = (income[i]||0) + t[1]; continue; }
+    if(kind==='net'){ net[c] = (net[c]||0) + t[1]; continue; }
+    (out[c] = out[c] || {})[i] = (out[c][i]||0) - t[1];
+    const k = c+'›'+i; (byMonth[k] = byMonth[k] || {})[t[0].slice(5,7)] = (byMonth[k][t[0].slice(5,7)]||0) - t[1];
+  }
+  for(const [k, v] of Object.entries(net)) if(v > 0.005) income[k] = (income[k]||0) + v; else if(v < -0.005) (out['Personal spending'] = out['Personal spending'] || {})[k] = -v;
+  const r2 = v => Math.round(v*100)/100;
+  for(const k of Object.keys(income)){ income[k] = r2(income[k]); if(income[k] <= 0) delete income[k]; }
+  for(const c of Object.keys(out)){ for(const i of Object.keys(out[c])){ out[c][i] = r2(out[c][i]); if(out[c][i] <= 0) delete out[c][i]; } if(!Object.keys(out[c]).length) delete out[c]; }
+  const lumpy = {}, filled = Math.ceil(span);
+  for(const [k, ms] of Object.entries(byMonth)){ const v = Object.values(ms).filter(x => x > 0), tot = v.reduce((a,b)=>a+b,0);
+    if(filled >= 4 && tot > 0 && (v.length <= Math.max(1, Math.floor(filled/4)) || Math.max(...v)/tot >= 0.6)) lumpy[k] = true; }
+  return {months: Math.ceil(span), span, div: span, income, out, lumpy, fromStatements: true,
+          note: `From your NatWest statements, 1 Jan – ${+last.toISOString().slice(8,10)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][last.getMonth()]} ${y}.`};
+}
+// Swap in statement years and note where the sheet disagrees with them.
+function withStatements(years){
+  const y = lessSprive(years);
+  for(const yr of new Set([STMT_SPAN[0].slice(0,4), STMT_SPAN[1].slice(0,4)])){
+    const S = stmtYear(yr); if(!S) continue;
+    const sh = years[yr]; y[yr] = S;
+    if(!sh) continue;
+    const tot = o => Object.values(o||{}).reduce((a,v) => a + (typeof v==='number' ? v : tot(v)), 0);
+    const cmp = [['Money in', tot(sh.income), tot(S.income)], ['Paid into the joint account', tot(sh.out['Paid into joint account']), tot(S.out['Paid into joint account'])],
+                 ['Savings & investing', tot(sh.out['Savings & investing']), tot(S.out['Savings & investing'])], ['Personal spending', tot(sh.out['Personal spending']), tot(S.out['Personal spending'])]];
+    const off = cmp.filter(([, a, b]) => Math.abs(a - b) >= Math.max(100, 0.05 * Math.max(a, b)));
+    if(off.length) CHECKS.push({src:'nw', year:yr, text:`The spreadsheet’s ${yr} figures don’t match the statements, so the statements are used: ` + off.map(([n, a, b]) => `${n} ${gbp2(a).replace('.00','')} on the sheet vs ${gbp2(b).replace(/\.\d\d$/,'')} on the statements`).join('; ') + '.'});
+  }
+  // what left NatWest for the joint account should match what the joint account says Ben paid in
+  for(const [yr, S] of Object.entries(y)){ if(!S.fromStatements || !BUILTIN_DATA.years[yr]) continue;
+    const J = BUILTIN_DATA.years[yr], ben = Object.entries(J.income).filter(([k]) => /^Ben\b/.test(k)).reduce((a,[,v]) => a+v, 0);
+    const nw = Object.values(S.out['Paid into joint account']||{}).reduce((a,v) => a+v, 0);
+    if(J.months === S.months && Math.abs(ben - nw) >= 50) CHECKS.push({src:'all', year:yr, text:`In ${yr} the joint account shows ${gbp2(ben)} paid in by you, but your NatWest statements show ${gbp2(nw)} paid to the joint account.`}); }
+  return y;
+}
+let NWY_DATA = {source:'NatWest statements where there are any (2026); earlier years from the Expenses section of the Full Summary sheet', years:withStatements(NWY_YEARS)};
 applySrc();
 const savePrefs = () => { try{ localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); }catch(e){} };
 
@@ -610,7 +709,7 @@ document.getElementById('fileIn').onchange = async ev => {
     let extra = '';
     try{ const fs = wb.Sheets['Full Summary'];
       if(fs){ const A = XLSX.utils.sheet_to_json(fs,{header:1,raw:true,defval:null}), full = parseFullSummary(A), ny = parseCashFlowYears(A);
-        if(full){ FULL = full; if(Object.keys(ny).length) NWY_YEARS = ny; NWY_DATA = {source:`Built from the Expenses section of “${f.name}” (Full Summary sheet)`, years:lessSprive(NWY_YEARS)}; usingExtra = true;
+        if(full){ FULL = full; if(Object.keys(ny).length) NWY_YEARS = ny; NWY_DATA = {source:`Built from the Expenses section of “${f.name}” (Full Summary sheet)`, years:withStatements(NWY_YEARS)}; usingExtra = true;
           try{ localStorage.setItem(EXTRA_KEY, JSON.stringify({full, years:NWY_YEARS})); }catch(e){} extra = ' and the Full Summary'; } }
     }catch(e){ extra = ' (Full Summary not readable)'; }
     prefs.year = null; toast(`Loaded ${Object.keys(years).sort().join(', ')}${extra} from ${f.name}`); render();
@@ -620,7 +719,7 @@ document.getElementById('fileIn').onchange = async ev => {
 document.getElementById('resetBtn').onclick = () => {
   try{ localStorage.removeItem(STORE_KEY); }catch(e){}
   try{ localStorage.removeItem(EXTRA_KEY); }catch(e){}
-  FULL = FULL_BUILTIN; NWY_YEARS = NWY_BUILTIN; NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:lessSprive(NWY_YEARS)}; usingExtra = false;
+  FULL = FULL_BUILTIN; NWY_YEARS = NWY_BUILTIN; NWY_DATA = {source:'NatWest statements where there are any (2026); earlier years from the Expenses section of the Full Summary sheet', years:withStatements(NWY_YEARS)}; usingExtra = false;
   JOINT = BUILTIN_DATA; applySrc(); usingImport = false; prefs.year = null; toast('Using built-in figures'); render();
 };
 let tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,3200); }
@@ -781,7 +880,7 @@ function isOneOff(D, cat, item){
   if(item && ONE_OFF_ITEMS.has(item)) return true;
   return !!(D.lumpy && D.lumpy[cat+'›'+(item||'')]);
 }
-const proFactor = (D, cat, item) => DATA.noPro || D.months >= 12 || isOneOff(D, cat, item) ? 1 : 12 / D.months;
+const proFactor = (D, cat, item) => DATA.noPro || D.months >= 12 || isOneOff(D, cat, item) ? 1 : 12 / (D.span || D.months);
 
 const ITEM_COLORS = ['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#4a3aa7']; // fixed order, never cycled
 function cleanDesc(d){
@@ -824,16 +923,15 @@ const STMT_MAP = {
   'Phone contract': [['Subscriptions & apps', ['Smarty (phone)']]],
   'Tennis/swim': [['Hobbies & leisure', ['Tennis', 'Sport & activities']]],
   'DnD': [['Hobbies & leisure', ['Card games']]],
-  'Out out': [['Eating out', null], ['Friends & social', null]],
+  'Out out': [['Eating out', null]],
   'Tax man': [['Student loan & tax', null]],
   'CASH': [['Cash', null]],
-  'Personal spending': [['Food shop', null], ['Work & lunches', null], ['Shopping', null], ['Subscriptions & apps', null], ['Hobbies & leisure', null], ['Eating out', null], ['Friends & social', null], ['Travel', null], ['Cash', null], ['Student loan & tax', null], ['Other', null]],
-  'Paid into joint account': [['Paid into joint account', null]],
   'Regular payments & top-ups': [['Paid into joint account', ['Regular £2,400', 'Top-ups']]],
-  'Savings & investing': [['Savings & investing', null]],
 };
-const stmtRows = key => { const m = STMT_MAP[key]; if(!m) return [];
-  return NW_TXNS.filter(t => m.some(([c, items]) => t[3]===c && (!items || items.includes(t[4])))).sort((a,b) => b[0].localeCompare(a[0])); };
+const stmtRows = key => { const m = STMT_MAP[key];
+  const hit = m ? t => m.some(([c, items]) => t[3]===c && (!items || items.includes(t[4])))
+                : t => { if(t[3]==='in' || t[3]==='Expensed to MIRA' || t[3]==='Covered by joint account') return false; const [, c, i] = stmtPlace(t); return i===key || c===key; };
+  return NW_TXNS.filter(hit).sort((a,b) => b[0].localeCompare(a[0])); };
 
 // Bank-statement breakdown of one spreadsheet line: month by month, split by what the statements call it.
 function openStatements(name, back){
@@ -929,7 +1027,7 @@ function openCompare(n, year, fromYears){
       return `<span class="ch ${good?'good':'bad'}">${pct>0?'▲':'▼'}${Math.abs(pct).toFixed(0)}%</span>`;
     };
     const range = part ? `Jan–${MON[r.D.months-1]}` : '';
-    const how = DATA.subs ? (DATA.subs[r.y]||'') : !part ? 'Full year' : !r.pro ? `${range} · one-off, as spent` : r.anyOne ? `${range} · ongoing ×${+(12/r.D.months).toFixed(1)}, one-offs as spent` : `${range} ×${+(12/r.D.months).toFixed(1)}`;
+    const how = DATA.subs ? (DATA.subs[r.y]||'') : !part ? 'Full year' : !r.pro ? `${range} · one-off, as spent` : r.anyOne ? `${range} · ongoing ×${+(12/(r.D.span||r.D.months)).toFixed(1)}, one-offs as spent` : `${range} ×${+(12/(r.D.span||r.D.months)).toFixed(1)}`;
     const soFar = sel && sel.D.months < 12 && sel.anyOne ? ' so far' : '';
     let delta = '';
     if(!me && sel && sel.fa!=null && r.fa){
@@ -957,7 +1055,7 @@ function openCompare(n, year, fromYears){
   if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year, fromYears); subEl.append(' · ', b); }
   if(hl && !only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = 'Unpin'; b.onclick = () => openCompare({name:ref.cat, color:focusColor, ref:{t:'cat', cat:ref.cat}}, year, fromYears); subEl.append(' · ', b); }
   // yearly personal view: link through to the bank-statement breakdown of the pinned item (or the whole category)
-  const stKey = isNW() && !isStm() ? (hl && STMT_MAP[hl] ? hl : !hl && STMT_MAP[ref.cat] ? ref.cat : null) : null;
+  const stKey = isNW() && !isStm() ? (hl || ref.cat) : null;
   if(stKey && stmtRows(stKey).length){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Bank statement breakdown of ${stKey} ›`;
     b.onclick = () => openStatements(stKey, () => openCompare(n, year, fromYears)); subEl.append(' · ', b); }
   if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year, yearsPin); subEl.prepend(b, ' · '); }
@@ -1483,7 +1581,9 @@ function render(){
   let nt = d.note || '';
   if(!isStm() && isNW() && !nt){ const pm = y => total(DATA.years[y].income)/Math.max(DATA.years[y].months,1), others = Object.keys(DATA.years).filter(y=>y!==year).map(pm).sort((a,b)=>a-b);
     if(others.length >= 2 && pm(year) > 1.8*others[Math.floor(others.length/2)]) nt = 'Income looks high for this year (about '+gbp(pm(year))+' a month against '+gbp(others[Math.floor(others.length/2)])+' in other years). The sheet probably counts transfers between your own accounts as income, so treat the net figure with care.'; }
+  if(d.fromStatements) nt = d.note;
   document.getElementById("note").textContent = nt;
+  renderChecks(year);
   drawChart(d, year);
 
   const fams = [...new Set(Object.keys(d.out).map(k=>CATS[k]||'home'))];
@@ -1496,6 +1596,12 @@ function render(){
   renderTie();
 }
 
+function renderChecks(year){
+  const el = document.getElementById('checks'), src = isNW() ? 'nw' : prefs.src === 'joint' ? 'joint' : null;
+  const list = src ? CHECKS.filter(c => (c.src === src || c.src === 'all') && (!c.year || c.year === year || (isStm() && c.src === 'nw'))) : [];
+  el.hidden = !list.length;
+  el.innerHTML = list.length ? `<li class="ck-h">Worth checking</li>` + list.map(c => `<li>${c.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</li>`).join('') : '';
+}
 function renderTie(){
   const el = document.getElementById('tie');
   if(!isStm()){ el.hidden = true; return; }
