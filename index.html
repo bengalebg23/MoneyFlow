@@ -350,7 +350,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.17';
+const APP_VERSION = '1.8.18';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -769,6 +769,8 @@ function openCompare(n, year, fromYears){
   let named = keys.slice(0, keys.length > 7 ? 6 : 7);
   if(hl && keys.includes(hl) && !named.includes(hl)) named = [...named.slice(0, named.length-1), hl];
   const color = {}; named.forEach((k,i) => color[k] = ITEM_COLORS[i]); color['Other'] = css('--c-in');
+  // A tapped item is pinned to the top of every year's stack, so its blocks share one baseline.
+  if(hl && named.includes(hl)) named = [hl, ...named.filter(k => k !== hl)];
   const order = [...named, 'Other'];
   rows.forEach(r => {
     const keep = r.parts.filter(p => named.includes(p.k)), rest = r.parts.filter(p => !named.includes(p.k));
@@ -777,7 +779,8 @@ function openCompare(n, year, fromYears){
   });
 
   const canPick = ref.t==='cat' && !only;   // in a category view every item can be tapped to compare just that item
-  const pickItem = k => openCompare({name:k, color:focusColor, ref:{t:'item', cat:ref.cat, item:k}}, year, fromYears);
+  // first tap pins the item to the top with everything else still drawn; tapping the pinned item again shows it alone
+  const pickItem = k => openCompare({name:k, color:focusColor, ref:{t:'item', cat:ref.cat, item:k}, showAll: k !== hl}, year, fromYears);
   const sel = rows.find(r=>r.y===year);
   const maxA = Math.max(...rows.map(r=>Math.max(r.fa||0, r.parts.reduce((s,p)=>s+p.a,0))), 1);
   const maxParts = Math.max(...rows.map(r=>r.parts.length), 0);
@@ -823,8 +826,9 @@ function openCompare(n, year, fromYears){
   document.getElementById('cmpTitle').textContent = only || title;
   document.querySelector('#cmp .eyebrow').textContent = (isStm() ? 'Month by month' : 'Year by year') + (only ? ` · ${ref.cat}` : '');
   const subEl = document.getElementById('cmpSub');
-  subEl.textContent = (hl && !only ? `${hl} highlighted · ` : '') + (isStm() ? 'every statement month drawn to the same scale' : 'all years drawn to the same scale') + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
+  subEl.textContent = (hl && !only ? `${hl} pinned to the top · tap it again to see it alone · ` : canPick ? 'Tap an item to pin it to the top · ' : '') + (isStm() ? 'every statement month drawn to the same scale' : 'all years drawn to the same scale') + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
   if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year, fromYears); subEl.append(' · ', b); }
+  if(hl && !only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = 'Unpin'; b.onclick = () => openCompare({name:ref.cat, color:focusColor, ref:{t:'cat', cat:ref.cat}}, year, fromYears); subEl.append(' · ', b); }
   if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year, yearsPin); subEl.prepend(b, ' · '); }
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
@@ -941,10 +945,10 @@ function drawPanel(el, r, o){
     .attr('d', p => o.side==='right'
       ? link({source:{x1:fx+nw}, target:{x0:px}, y0:(p.sy0+p.sy1)/2, y1:(p.y0+p.y1)/2})
       : link({source:{x1:px+nw}, target:{x0:fx}, y0:(p.y0+p.y1)/2, y1:(p.sy0+p.sy1)/2}))
-    .attr('stroke', p=>o.color[p.k]).attr('stroke-width', p=>p.y1-p.y0).attr('stroke-opacity', p=>dim(p.k)?.12:.45);
+    .attr('stroke', p=>o.color[p.k]).attr('stroke-width', p=>p.y1-p.y0).attr('stroke-opacity', p=>dim(p.k)?.25:.45);
   svg.append('rect').attr('x',fx).attr('y',fy).attr('width',nw).attr('height',Math.max(1,fh)).attr('rx',2).attr('fill',o.focusColor);
   svg.append('g').selectAll('rect').data(parts).join('rect').attr('x',px).attr('y',p=>p.y0).attr('width',nw).attr('height',p=>p.y1-p.y0).attr('rx',2)
-    .attr('fill', p=>o.color[p.k]).attr('fill-opacity', p=>dim(p.k)?.3:1);
+    .attr('fill', p=>o.color[p.k]).attr('fill-opacity', p=>dim(p.k)?.55:1);
   if(o.onItem) svg.selectAll('path.link, rect').filter(p => p && p.k && p.k !== 'Other').style('cursor','pointer').on('click', (ev,p) => o.onItem(p.k));
 }
 function closeCompare(){ document.getElementById('cmp').hidden = true; document.body.style.overflow = ''; }
