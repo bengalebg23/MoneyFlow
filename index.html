@@ -352,7 +352,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.20';
+const APP_VERSION = '1.8.21';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -380,13 +380,22 @@ const NW_TXNS = [["2025-12-15",-250.0,"OnLine Transaction JOINTHAVELOCK Top up V
   const ITEM = 'ASDA (via Sprive)', BACK = 'Back from joint account';
   for(const D of Object.values(NW_DATA.years)){
     const food = D.out && D.out['Food shop'], spr = food && food[ITEM] || 0, back = D.income && D.income[BACK] || 0;
-    const n = Math.min(spr, back); if(n <= 0) continue;
-    food[ITEM] = +(spr - n).toFixed(2); if(food[ITEM] < 0.005) delete food[ITEM];
-    if(!Object.keys(food).length) delete D.out['Food shop'];
-    D.income[BACK] = +(back - n).toFixed(2); if(D.income[BACK] < 0.005) delete D.income[BACK];
+    const n = Math.min(spr, back);
+    if(n > 0){
+      food[ITEM] = +(spr - n).toFixed(2); if(food[ITEM] < 0.005) delete food[ITEM];
+      if(!Object.keys(food).length) delete D.out['Food shop'];
+      D.income[BACK] = +(back - n).toFixed(2); if(D.income[BACK] < 0.005) delete D.income[BACK];
+    }
+    // What's left coming back is "TOP UP RETURN": cash Ben put into Santander to stop it going
+    // overdrawn and then took back, so it cancels against his top-ups rather than counting as income.
+    const jt = D.out && D.out['Paid into joint account'], rest = D.income && D.income[BACK] || 0, tu = jt && jt['Top-ups'] || 0;
+    const m = Math.min(rest, tu); if(m <= 0) continue;
+    jt['Top-ups'] = +(tu - m).toFixed(2); if(jt['Top-ups'] < 0.005) delete jt['Top-ups'];
+    D.income[BACK] = +(rest - m).toFixed(2); if(D.income[BACK] < 0.005) delete D.income[BACK];
   }
   NW_TXNS.forEach(t => {
     if(/SPRIVE/i.test(t[2]) || (t[4]===BACK && /TOP UP (?!RETURN)/i.test(t[2]))){ t[3] = 'Covered by joint account'; t[4] = 'Sprive top-ups'; }
+    else if(t[4]===BACK && /TOP UP RETURN/i.test(t[2])){ t[3] = 'Paid into joint account'; t[4] = 'Top-ups'; }   // shows as a refund on the top-ups
   });
 })();
 // ── state ──
