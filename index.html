@@ -182,6 +182,8 @@
   .ys-svg .seg, .ys-svg .rib{cursor:pointer; transition:opacity .15s;}
   .ys-svg.dimming .seg:not(.on), .ys-svg.dimming .rib:not(.on){opacity:.12;}
   .ys-tbl tr.pinned td{font-weight:700;} .ys-tbl tr.pinned td:first-child::after{content:' ▲'; font-size:9px; color:var(--paper-dim);}
+  .blab text{font-family:'Inter',sans-serif; fill:var(--paper); paint-order:stroke; stroke:var(--bg); stroke-width:2.5px; stroke-linejoin:round;}
+  .blab .bl-n{font-size:9.5px; font-weight:600;} .blab .bl-a{font-family:'IBM Plex Mono',monospace; font-size:9px; fill:var(--paper-dim);}
   .ys-svg text{font-family:'IBM Plex Mono',monospace; fill:var(--paper-dim);}
   .ys-svg .yl{font-size:12px; font-weight:600; fill:var(--paper);} .ys-svg .yl.me{fill:var(--mustard);}
   .ys-svg .tl{font-size:10px;}
@@ -350,7 +352,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.18';
+const APP_VERSION = '1.8.19';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -817,7 +819,7 @@ function openCompare(n, year, fromYears){
         <span class="c-delta">${delta || '&nbsp;'}</span></div>
       <div class="c-body">
       ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${lab(r.y)}</div>`}
-      <ul class="c-list">${r.parts.map(p => `<li class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>`).join('')
+      <ul class="c-list">${r.parts.map(p => `<li data-k="${p.k.replace(/"/g,'&quot;')}" class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>`).join('')
         || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
       </div>
     </section>`;
@@ -832,7 +834,9 @@ function openCompare(n, year, fromYears){
   if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year, yearsPin); subEl.prepend(b, ' · '); }
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
-  rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(el) drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right', onItem: canPick ? pickItem : null}); });
+  rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(!el) return;
+    const done = drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right', onItem: canPick ? pickItem : null});
+    el.closest('.c-body').querySelectorAll('.c-list li[data-k]').forEach(li => { if(done.has(li.dataset.k)) li.hidden = true; }); });
   if(canPick) body.querySelectorAll('.c-list li[data-item]').forEach(li => {
     li.onclick = () => pickItem(li.dataset.item);
     li.onkeydown = ev => { if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); pickItem(li.dataset.item); } };
@@ -949,7 +953,31 @@ function drawPanel(el, r, o){
   svg.append('rect').attr('x',fx).attr('y',fy).attr('width',nw).attr('height',Math.max(1,fh)).attr('rx',2).attr('fill',o.focusColor);
   svg.append('g').selectAll('rect').data(parts).join('rect').attr('x',px).attr('y',p=>p.y0).attr('width',nw).attr('height',p=>p.y1-p.y0).attr('rx',2)
     .attr('fill', p=>o.color[p.k]).attr('fill-opacity', p=>dim(p.k)?.55:1);
+  // Label each block directly on its colour band (name wraps over lines if there's height for it,
+  // amount underneath when it fits); blocks too thin for text keep their entry in the key below.
+  const labelled = new Set(), room = W - nw*2 - 6, LH = 10.5;
+  const tx = o.side==='right' ? px - 3 : px + nw + 3, anchor = o.side==='right' ? 'end' : 'start';
+  const gL = svg.append('g').attr('class','blab').style('pointer-events','none');
+  const probe = gL.append('text').attr('class','bl-n');
+  const wid = str => { probe.text(str); return probe.node().getComputedTextLength(); };
+  const clip = str => { if(wid(str) <= room) return str; for(let n = str.length-1; n >= 2; n--){ const t = str.slice(0,n).trimEnd() + '…'; if(wid(t) <= room) return t; } return null; };
+  parts.forEach(p => {
+    const h = p.y1 - p.y0, maxL = Math.floor((h - 2) / LH); if(maxL < 1) return;
+    const words = (p.k + (p.n ? ` (${p.n})` : '')).split(' '), lines = [];
+    for(const w of words){ const last = lines[lines.length-1];
+      if(last != null && wid(last + ' ' + w) <= room) lines[lines.length-1] = last + ' ' + w; else lines.push(w); }
+    let nm = lines.slice(0, maxL);
+    if(lines.length > maxL) nm[maxL-1] = nm[maxL-1] + '…';
+    nm = nm.map(clip); if(nm.some(l => !l)) return;
+    const amt = nm.length < maxL ? (p.pro?'≈':'') + compact(p.a) : null;
+    const all = amt ? [...nm, amt] : nm, y0 = (p.y0 + p.y1)/2 - (all.length - 1) * LH / 2;
+    all.forEach((t, i) => gL.append('text').attr('class', amt && i === all.length-1 ? 'bl-a' : 'bl-n')
+      .attr('x', tx).attr('y', y0 + i*LH).attr('dy','0.35em').attr('text-anchor', anchor).text(t));
+    labelled.add(p.k);
+  });
+  probe.remove();
   if(o.onItem) svg.selectAll('path.link, rect').filter(p => p && p.k && p.k !== 'Other').style('cursor','pointer').on('click', (ev,p) => o.onItem(p.k));
+  return labelled;
 }
 function closeCompare(){ document.getElementById('cmp').hidden = true; document.body.style.overflow = ''; }
 document.getElementById('cmpX').onclick = closeCompare;
