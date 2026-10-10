@@ -352,7 +352,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.21';
+const APP_VERSION = '1.8.22';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -376,12 +376,14 @@ const NW_TXNS = [["2025-12-15",-250.0,"OnLine Transaction JOINTHAVELOCK Top up V
 // Sprive top-ups (bought on Ben's card because Sprive wouldn't take the joint Santander card) are the
 // joint account's food shop, and the joint account pays them straight back ("TOP UP ASDA" etc.).
 // Net them off both sides so they don't show as personal food spend or as income.
+const SPRIVE_NET = {};   // per calendar year, Sprive spend the joint account paid back
 (function netSprive(){
   const ITEM = 'ASDA (via Sprive)', BACK = 'Back from joint account';
-  for(const D of Object.values(NW_DATA.years)){
+  for(const [k, D] of Object.entries(NW_DATA.years)){ D._k = k;
     const food = D.out && D.out['Food shop'], spr = food && food[ITEM] || 0, back = D.income && D.income[BACK] || 0;
     const n = Math.min(spr, back);
     if(n > 0){
+      if(/^\d{4}-\d\d$/.test(D._k || '')) SPRIVE_NET[D._k.slice(0,4)] = (SPRIVE_NET[D._k.slice(0,4)] || 0) + n;
       food[ITEM] = +(spr - n).toFixed(2); if(food[ITEM] < 0.005) delete food[ITEM];
       if(!Object.keys(food).length) delete D.out['Food shop'];
       D.income[BACK] = +(back - n).toFixed(2); if(D.income[BACK] < 0.005) delete D.income[BACK];
@@ -393,6 +395,7 @@ const NW_TXNS = [["2025-12-15",-250.0,"OnLine Transaction JOINTHAVELOCK Top up V
     jt['Top-ups'] = +(tu - m).toFixed(2); if(jt['Top-ups'] < 0.005) delete jt['Top-ups'];
     D.income[BACK] = +(rest - m).toFixed(2); if(D.income[BACK] < 0.005) delete D.income[BACK];
   }
+  Object.values(NW_DATA.years).forEach(D => delete D._k);
   NW_TXNS.forEach(t => {
     if(/SPRIVE/i.test(t[2]) || (t[4]===BACK && /TOP UP (?!RETURN)/i.test(t[2]))){ t[3] = 'Covered by joint account'; t[4] = 'Sprive top-ups'; }
     else if(t[4]===BACK && /TOP UP RETURN/i.test(t[2])){ t[3] = 'Paid into joint account'; t[4] = 'Top-ups'; }   // shows as a refund on the top-ups
@@ -413,7 +416,13 @@ const FULL_BUILTIN = {"months":["2021-09","2021-10","2021-11","2021-12","2022-01
 const NWY_BUILTIN = {"2023":{"months":12,"income":{"Income":84227},"out":{"Paid into joint account":{"Regular payments & top-ups":28800},"Other transfers":{"Transfers to other accounts":11962},"Mortgage overpayment":{"Overpayment":11500},"Savings & investing":{"Natwest Savings":1150,"Investment #3":1100,"Investment #5":1400,"Savings":4800,"Regular saver":1650},"House & holiday (capex)":{"Holiday":930,"House":1987,"Extension":6381},"Personal spending":{"MIRA":711,"EToro":400,"Credit Card":408,"Treat yo'Self":690,"DnD":193,"Food":423,"Clothes":263,"Days out":173,"Tennis/swim":229,"Amazon":140,"Bdays":323,"Xmas":245,"Misc":164,"Car":8,"Reuben":8,"Out out":25,"Dentist":26,"Apple":1}},"note":""},"2024":{"months":12,"income":{"Income":39549,"Transfers in":3351},"out":{"Paid into joint account":{"Regular payments & top-ups":29150},"Savings & investing":{"Investment #3":1200,"Investment #5":1400,"Stocked shares":359,"Regular saver":1800},"House & holiday (capex)":{"Holiday":48,"House":772,"Solar":3500},"Personal spending":{"MIRA":338,"EToro":600,"Credit Card":544,"Fudge factor":17,"Flowers":20,"Treat yo'Self":188,"Playstation":29,"DnD":45,"Food":233,"Clothes":125,"Days out":21,"Tennis/swim":142,"Amazon":161,"Bdays":292,"Xmas":240,"Misc":240,"Car":47,"Reuben":37,"Boys night out":46,"Out out":100,"Dentist":90,"Invest cost":4,"Medicine/health":100,"Apple":73}},"note":""},"2025":{"months":6,"income":{"Income":20532,"Transfers in":2754},"out":{"Paid into joint account":{"Regular payments & top-ups":12500},"Savings & investing":{"Investment #3":200,"Investment #5":200,"Regular saver":750,"NS&I":250},"House & holiday (capex)":{"Holiday":3918,"House":24},"Personal spending":{"MIRA":303,"EToro":250,"Credit Card":32,"Flowers":55,"Treat yo'Self":343,"DnD":12,"Food":217,"Clothes":93,"Days out":29,"Tennis/swim":32,"Amazon":65,"Bdays":222,"Misc":30,"Car":27,"Reuben":12,"Invest cost":8,"Medicine/health":41,"Tax man":562,"Apple":90}},"note":"Only 6 months of this year are filled in on the sheet."},"2026":{"months":9,"income":{"Income":30426,"Withdrawn from savings":891},"out":{"Paid into joint account":{"Regular payments & top-ups":21550},"Savings & investing":{"Investment #5":3448},"House & holiday (capex)":{"Holiday":1500,"House":981},"Personal spending":{"MIRA":475,"Playstation":172,"DnD":53,"Food":843,"Clothes":16,"Days out":336,"Tennis/swim":120,"Amazon":271,"Bdays":123,"Misc":803,"Car":14,"Out out":167,"Dentist":24,"Tax man":76,"Apple":94,"CASH":80,"Haircut":41,"Phone contract":72}},"note":"Only 9 months of this year are filled in on the sheet."}};
 let FULL = FULL_BUILTIN, NWY_YEARS = NWY_BUILTIN, usingExtra = false;
 try{ const x = JSON.parse(localStorage.getItem(EXTRA_KEY)); if(x && x.full){ FULL = x.full; if(x.years && Object.keys(x.years).length) NWY_YEARS = x.years; usingExtra = true; } }catch(e){}
-let NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:NWY_YEARS};
+// The Full Summary sheet logs the Sprive top-ups under personal "Food"; take out what the joint
+// account paid back so the yearly view matches the statements (the joint account already counts that food shop).
+const lessSprive = years => { const y = JSON.parse(JSON.stringify(years));
+  for(const [yr, n] of Object.entries(SPRIVE_NET)){ const ps = y[yr] && y[yr].out && y[yr].out['Personal spending'];
+    if(!ps || !ps.Food) continue; ps.Food = Math.round(Math.max(0, ps.Food - n)); if(!ps.Food) delete ps.Food; }
+  return y; };
+let NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:lessSprive(NWY_YEARS)};
 applySrc();
 const savePrefs = () => { try{ localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); }catch(e){} };
 
@@ -564,7 +573,7 @@ document.getElementById('fileIn').onchange = async ev => {
     let extra = '';
     try{ const fs = wb.Sheets['Full Summary'];
       if(fs){ const A = XLSX.utils.sheet_to_json(fs,{header:1,raw:true,defval:null}), full = parseFullSummary(A), ny = parseCashFlowYears(A);
-        if(full){ FULL = full; if(Object.keys(ny).length) NWY_YEARS = ny; NWY_DATA = {source:`Built from the Expenses section of “${f.name}” (Full Summary sheet)`, years:NWY_YEARS}; usingExtra = true;
+        if(full){ FULL = full; if(Object.keys(ny).length) NWY_YEARS = ny; NWY_DATA = {source:`Built from the Expenses section of “${f.name}” (Full Summary sheet)`, years:lessSprive(NWY_YEARS)}; usingExtra = true;
           try{ localStorage.setItem(EXTRA_KEY, JSON.stringify({full, years:NWY_YEARS})); }catch(e){} extra = ' and the Full Summary'; } }
     }catch(e){ extra = ' (Full Summary not readable)'; }
     prefs.year = null; toast(`Loaded ${Object.keys(years).sort().join(', ')}${extra} from ${f.name}`); render();
@@ -574,7 +583,7 @@ document.getElementById('fileIn').onchange = async ev => {
 document.getElementById('resetBtn').onclick = () => {
   try{ localStorage.removeItem(STORE_KEY); }catch(e){}
   try{ localStorage.removeItem(EXTRA_KEY); }catch(e){}
-  FULL = FULL_BUILTIN; NWY_YEARS = NWY_BUILTIN; NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:NWY_YEARS}; usingExtra = false;
+  FULL = FULL_BUILTIN; NWY_YEARS = NWY_BUILTIN; NWY_DATA = {source:'Built from the Expenses section of the Full Summary sheet (your NatWest account)', years:lessSprive(NWY_YEARS)}; usingExtra = false;
   JOINT = BUILTIN_DATA; applySrc(); usingImport = false; prefs.year = null; toast('Using built-in figures'); render();
 };
 let tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true,3200); }
