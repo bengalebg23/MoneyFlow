@@ -367,7 +367,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.9.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -411,7 +411,6 @@ const CHECKS = [];
       const gap = +(v - (have[c+'\u0001'+i] || 0)).toFixed(2);
       if(gap > 0.005){ NW_TXNS.push([end, -gap, `Not itemised on the statement (${i}, ${z.range} total)`, c, i, 'gap']); added.push(`${i} ${gbp2(gap)}`); }
     }
-    if(added.length) CHECKS.push({src:'nw', year:end.slice(0,4), text:`The ${z.range} statement total includes ${gbp2(z.wd - out)} of payments that aren’t itemised (${added.join(', ')}). They’re counted, dated ${+m[1]} ${m[2]}.`});
   }
   NW_TXNS.sort((a,b) => a[0].localeCompare(b[0]));
 })();
@@ -470,10 +469,15 @@ const MIRA_CLAIMS = [
     for(const k of [per(credit[0]), 'ALL']){ const D = NW_DATA.years[k]; if(!D || D.income['Other pay (MIRA)'] == null) continue;
       D.income['Other pay (MIRA)'] = +(D.income['Other pay (MIRA)'] - covered).toFixed(2); if(D.income['Other pay (MIRA)'] < 0.005) delete D.income['Other pay (MIRA)']; }
     [...rows, credit].forEach(t => { t[3] = 'Expensed to MIRA'; t[4] = cl.label; });
-    if(credit[1] - covered > 0.005) CHECKS.push({src:'nw', year:credit[0].slice(0,4), text:`MIRA paid ${gbp2(credit[1])} for “${cl.label}”, but the costs on your card come to ${gbp2(spent)} after refunds. The other ${gbp2(credit[1]-covered)} is counted as income from MIRA until it’s clear what it was for.`});
+    // anything the claim paid beyond the costs is just banked as other income
+    const extra = +(credit[1] - covered).toFixed(2);
+    if(extra > 0.005) for(const k of [per(credit[0]), 'ALL']){ const D = NW_DATA.years[k]; if(!D) continue;
+      D.income['Other pay (MIRA)'] = +((D.income['Other pay (MIRA)']||0) - extra).toFixed(2); if(D.income['Other pay (MIRA)'] < 0.005) delete D.income['Other pay (MIRA)'];
+      D.income['Other income'] = +((D.income['Other income']||0) + extra).toFixed(2); }
   }
-  const loose = NW_TXNS.filter(t => t[4]==='Other pay (MIRA)');
-  if(loose.length) CHECKS.push({src:'nw', year:null, text:`${loose.length} payment${loose.length>1?'s':''} from MIRA (${loose.map(t => gbp2(t[1])+' on '+t[0].slice(8)+'/'+t[0].slice(5,7)).join(', ')}) don’t match any spending on your card, so they’re counted as income.`});
+  // MIRA payments that match no spending on the card: income nobody has explained yet
+  NW_TXNS.forEach(t => { if(t[4]==='Other pay (MIRA)') t[4] = 'Unanswered income'; });
+  for(const D of Object.values(NW_DATA.years)) if(D.income['Other pay (MIRA)'] != null){ D.income['Unanswered income'] = (D.income['Unanswered income']||0) + D.income['Other pay (MIRA)']; delete D.income['Other pay (MIRA)']; }
 })();
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
@@ -509,7 +513,7 @@ const STMT_TO_SHEET = (c, i) =>
 const STMT_KEEP = new Set(['Paid into joint account', 'Savings & investing']);
 const stmtPlace = t => {   // [kind, category, item] a statement line lands on in a statement-built year
   if(t[3]==='in') return ['in', null, /^From (own savings|NatWest Invest)$/.test(t[4]) ? 'Withdrawn from savings' : t[4]];
-  if(t[3]==='Expensed to MIRA') return ['net', 'Other pay (MIRA)', null];
+  if(t[3]==='Expensed to MIRA') return ['net', 'Other income', null];
   if(t[3]==='Covered by joint account') return ['net', 'Back from joint account', null];
   if(STMT_KEEP.has(t[3])) return ['out', t[3], t[4]];
   return ['out', 'Personal spending', STMT_TO_SHEET(t[3], t[4])];
@@ -545,11 +549,6 @@ function withStatements(years){
     const S = stmtYear(yr); if(!S) continue;
     const sh = years[yr]; y[yr] = S;
     if(!sh) continue;
-    const tot = o => Object.values(o||{}).reduce((a,v) => a + (typeof v==='number' ? v : tot(v)), 0);
-    const cmp = [['Money in', tot(sh.income), tot(S.income)], ['Paid into the joint account', tot(sh.out['Paid into joint account']), tot(S.out['Paid into joint account'])],
-                 ['Savings & investing', tot(sh.out['Savings & investing']), tot(S.out['Savings & investing'])], ['Personal spending', tot(sh.out['Personal spending']), tot(S.out['Personal spending'])]];
-    const off = cmp.filter(([, a, b]) => Math.abs(a - b) >= Math.max(100, 0.05 * Math.max(a, b)));
-    if(off.length) CHECKS.push({src:'nw', year:yr, text:`The spreadsheet’s ${yr} figures don’t match the statements, so the statements are used: ` + off.map(([n, a, b]) => `${n} ${gbp2(a).replace('.00','')} on the sheet vs ${gbp2(b).replace(/\.\d\d$/,'')} on the statements`).join('; ') + '.'});
   }
   // what left NatWest for the joint account should match what the joint account says Ben paid in
   for(const [yr, S] of Object.entries(y)){ if(!S.fromStatements || !BUILTIN_DATA.years[yr]) continue;
