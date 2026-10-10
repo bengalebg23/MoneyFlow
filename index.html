@@ -357,7 +357,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.23';
+const APP_VERSION = '1.8.24';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -405,6 +405,38 @@ const SPRIVE_NET = {};   // per calendar year, Sprive spend the joint account pa
     if(/SPRIVE/i.test(t[2]) || (t[4]===BACK && /TOP UP (?!RETURN)/i.test(t[2]))){ t[3] = 'Covered by joint account'; t[4] = 'Sprive top-ups'; }
     else if(t[4]===BACK && /TOP UP RETURN/i.test(t[2])){ t[3] = 'Paid into joint account'; t[4] = 'Top-ups'; }   // shows as a refund on the top-ups
   });
+})();
+// Extra payments from MIRA ("Other pay (MIRA)") are expense claims paying Ben back for work costs
+// he put on his own card. Each claim below lists the statement lines it covers (date, amount);
+// both sides come out of the totals and the lines are grouped as "Expensed to MIRA".
+// Unmatched claims stay as income until it's clear what they paid for.
+const MIRA_CLAIMS = [
+  {label:'NEC trip 21 Apr', credit:['2026-05-08', 262.19],
+   lines:[['2026-04-22', -229.29], ['2026-04-22', -19.95], ['2026-04-22', -6.25], ['2026-04-22', -6.7], ['2026-04-29', 226.5, 'Travel/Trains']]},   // Trainline refunded the ticket
+];
+(function netClaims(){
+  const per = d => { const [y,m,dd] = d.split('-').map(Number), n = dd >= 14 ? m + 1 : m; return n > 12 ? `${y+1}-01` : `${y}-${String(n).padStart(2,'0')}`; };
+  const take = (D, t, into) => {   // remove one statement line from a period's totals
+    if(!D) return;
+    if(into){ const [c0, i0] = into.split('/'); t = [t[0], t[1], t[2], c0, i0]; }   // a refund already netted into a spend category
+    if(t[3]==='in'){ const v = D.income[t[4]]; if(v == null) return; D.income[t[4]] = +(v - t[1]).toFixed(2); if(Math.abs(D.income[t[4]]) < 0.005) delete D.income[t[4]]; return; }
+    const c = D.out[t[3]]; if(!c || c[t[4]] == null) return;
+    // refunds were already netted into their category, so a positive line puts spend back
+    c[t[4]] = +(c[t[4]] + t[1]).toFixed(2); if(Math.abs(c[t[4]]) < 0.005) delete c[t[4]];
+    if(!Object.keys(c).length) delete D.out[t[3]];
+  };
+  for(const cl of MIRA_CLAIMS){
+    const rows = [];
+    const credit = NW_TXNS.find(t => t[0]===cl.credit[0] && Math.abs(t[1]-cl.credit[1]) < 0.005 && t[4]==='Other pay (MIRA)'); if(!credit) continue;
+    const into = new Map();
+    for(const [d, a, cat] of cl.lines){ const t = NW_TXNS.find(x => x[0]===d && Math.abs(x[1]-a) < 0.005 && x[3]!=='Expensed to MIRA' && !rows.includes(x)); if(t){ rows.push(t); if(cat) into.set(t, cat); } }
+    const spent = -rows.reduce((s,t) => s + t[1], 0), covered = Math.min(spent, credit[1]);
+    // the claim's spend leaves its categories; only what the claim covered leaves income
+    rows.forEach(t => { take(NW_DATA.years[per(t[0])], t, into.get(t)); take(NW_DATA.years.ALL, t, into.get(t)); });
+    for(const k of [per(credit[0]), 'ALL']){ const D = NW_DATA.years[k]; if(!D || D.income['Other pay (MIRA)'] == null) continue;
+      D.income['Other pay (MIRA)'] = +(D.income['Other pay (MIRA)'] - covered).toFixed(2); if(D.income['Other pay (MIRA)'] < 0.005) delete D.income['Other pay (MIRA)']; }
+    [...rows, credit].forEach(t => { t[3] = 'Expensed to MIRA'; t[4] = cl.label; });
+  }
 })();
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
@@ -785,7 +817,7 @@ function addTxns(body, cat, item){
 // broken down transaction by transaction. [statement category, items or null for the whole category]
 const STMT_MAP = {
   'Food': [['Food shop', null]],
-  'MIRA': [['Work & lunches', null]],
+  'MIRA': [['Work & lunches', ['Thomas Franks (canteen)']]],
   'Amazon': [['Shopping', ['Amazon']]],
   'Clothes': [['Shopping', ['Etsy, eBay, Vinted & other']]],
   'Apple': [['Subscriptions & apps', ['Apple']]],
