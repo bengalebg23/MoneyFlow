@@ -357,7 +357,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.8.25';
+const APP_VERSION = '1.8.26';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1456,7 +1456,7 @@ function render(){
   document.getElementById('yearTabs').hidden = !flow;
   const tabs = [['joint','Joint account'],['nw','Ben’s cash flow'],['worth','Net worth'],['assets','Assets']];
   document.getElementById('srcTabs').innerHTML = tabs.map(([k,t])=>`<button class="src-tab${prefs.src===k?' active':''}" data-s="${k}">${t}</button>`).join('');
-  document.querySelectorAll('.src-tab').forEach(b=>b.onclick=()=>{ if(prefs.src===b.dataset.s) return; prefs.src=b.dataset.s; prefs.year=null; savePrefs(); setTimeout(render,0); });
+  document.querySelectorAll('.src-tab').forEach(b=>b.onclick=()=>{ if(prefs.src===b.dataset.s) return; prefs.src=b.dataset.s; if(prefs.year==='ALL') prefs.year=null; savePrefs(); setTimeout(render,0); });
   const vt = document.getElementById('viewTabs'); vt.hidden = !isNW();
   vt.innerHTML = isNW() ? [['years','By year'],['stmts','By statement']].map(([k,t])=>`<button class="sub-tab${prefs.nwView===k?' active':''}" data-v="${k}">${t}</button>`).join('') : '';
   vt.querySelectorAll('.sub-tab').forEach(b=>b.onclick=()=>{ prefs.nwView=b.dataset.v; prefs.year=null; savePrefs(); setTimeout(render,0); });
