@@ -36,6 +36,11 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.10.0 — "One-offs" screen (openOneOffs): every spending item with a Regular /
+           One-off switch; choices are saved per account in localStorage (OVR_KEY,
+           held in ONEOFF_SET) and beat the app's guess in isOneOff. Shows regular,
+           one-offs and the projected full year. Year comparison gains
+           "Regular spending only".
   v1.9.0 — Bank statements are the source of truth. NatWest calendar years the
            statements cover (2026) are built from NW_TXNS (stmtYear), with day-to-day
            spend named to match the sheet's Personal spending items; the sheet is only
@@ -291,6 +296,14 @@
   .st-key{list-style:none; margin:10px 0 0; padding:0 6px; display:grid; gap:3px; font-size:12.5px;} .st-key li{display:flex; align-items:center; gap:7px;} .st-key i{width:10px; height:10px; border-radius:2px; flex:none;} .st-key .mono{margin-left:auto; color:var(--paper-dim);}
   .checks{list-style:none; margin:10px 14px 4px; padding:10px 12px; border:1px solid #e8b04a; background:rgba(237,161,0,.08); border-radius:10px; font-size:12.5px; line-height:1.45; display:grid; gap:6px;}
   .checks .ck-h{font-weight:700; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#b07800;} .checks li:not(.ck-h)::before{content:'⚠ '; color:#b07800;}
+  .oo-sum{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;} .oo-sum>div{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:1px; min-width:0;}
+  .oo-sum .k{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--paper-dim);} .oo-sum b{font-size:16px;} .oo-sum .s{font-size:11px; color:var(--paper-dim);}
+  .oo-cat h3{display:flex; align-items:center; gap:7px; font-size:14px; margin:14px 2px 4px;} .oo-cat h3 i{width:10px; height:10px; border-radius:2px;}
+  .oo-cat ul{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);} .oo-cat li{display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; padding:6px 2px; border-bottom:1px solid var(--line); font-size:13.5px;}
+  .oo-cat .nm{overflow-wrap:anywhere;} .oo-cat .am{font-size:12px; color:var(--paper-dim);}
+  .oo-auto-key{font-style:normal; font-size:10px; color:var(--paper-dim); border:1px dashed var(--line); border-radius:6px; padding:0 4px;}
+  .seg2{display:inline-flex; border:1px solid var(--line); border-radius:999px; overflow:hidden;} .seg2 button{border:0; background:var(--surface); color:var(--paper-dim); font:600 11.5px 'Inter',sans-serif; padding:5px 9px; cursor:pointer;}
+  .seg2 button.on{background:var(--mustard); color:#fff;} .seg2 button+button{border-left:1px solid var(--line);}
   .txns{margin:18px 0 8px;} .txns h3{font-size:15px; margin:0 0 4px; display:flex; justify-content:space-between; gap:10px;}
   .tx-m{display:flex; justify-content:space-between; font-size:12px; color:var(--paper-dim); border-bottom:1px solid var(--line); padding:8px 0 3px; margin-top:6px;}
   .tx-list{list-style:none; margin:0; padding:0;} .tx-list li{border-bottom:1px solid var(--line); cursor:pointer; padding:6px 0;}
@@ -327,6 +340,7 @@
     <p class="src" id="zoomHint"></p>
     <div class="btns">
       <button class="btn" id="yearsBtn">Compare all years</button>
+      <button class="btn" id="oneOffBtn">One-offs</button>
       <button class="btn primary" id="loadBtn">Load spreadsheet</button>
       <button class="btn" id="resetBtn" hidden>Use built-in figures</button>
       <input type="file" id="fileIn" accept=".xlsx,.xlsm,.xls" hidden>
@@ -367,7 +381,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.9.3';
+const APP_VERSION = '1.10.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -874,7 +888,14 @@ function partsIn(ref, d){
 // (most of the year's spend landed in one or two months — the parser's "lumpy" check).
 const ONE_OFF_CATS = new Set(['Mortgage overpayment','House & holiday (capex)','Other transfers','Holidays','Home projects','Parties & weddings','Annual payments']);
 const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'Emily (one-off, April)','Ben (one-off)','Emily (one-off)']);
+// Ben's own one-off / regular choices (set on the "One-off or regular" screen) beat the app's guess.
+// Keyed by account + category › item, so one choice covers every year.
+const OVR_KEY = 'moneyflow.oneoff.v1';
+let ONEOFF_SET = {}; try{ ONEOFF_SET = JSON.parse(localStorage.getItem(OVR_KEY)) || {}; }catch(e){}
+const ovrKey = (cat, item) => (isNW() ? 'nw' : 'joint') + '|' + cat + '›' + (item || '');
+const autoOneOff = (D, cat, item) => ONE_OFF_CATS.has(cat) || !!(item && ONE_OFF_ITEMS.has(item)) || !!(D.lumpy && D.lumpy[cat+'›'+(item||'')]);
 function isOneOff(D, cat, item){
+  const o = ONEOFF_SET[ovrKey(cat, item)]; if(o) return o === 'one';
   if(ONE_OFF_CATS.has(cat)) return true;
   if(item && ONE_OFF_ITEMS.has(item)) return true;
   return !!(D.lumpy && D.lumpy[cat+'›'+(item||'')]);
@@ -1070,7 +1091,48 @@ function openCompare(n, year, fromYears){
   if(isStm() && ref.t==='cat') addTxns(body, ref.cat, only);
   document.getElementById('cmpX').focus({preventScroll:true});
 }
-let yearsMode = 'out', yearsPin = null;
+// One-off or regular: every spending item for the account, with a Regular / One-off switch each.
+// Regular items are scaled up to a full year in part years; one-offs count as spent.
+function openOneOffs(year, back){
+  const yrs = yearKeys(), Y = DATA.years[year] && DATA.years[year].months < 12 ? year : yrs[yrs.length-1], D = DATA.years[Y];
+  const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const items = {};   // cat -> {item -> {total over all years, this year}}
+  for(const y of yrs) for(const [c, v] of Object.entries(DATA.years[y].out)){
+    const its = typeof v === 'number' ? {'': v} : v;
+    for(const [i, x] of Object.entries(its)){ if(!(x > 0)) continue; const o = ((items[c] = items[c] || {})[i] = items[c][i] || {all:0, now:0}); o.all += x; if(y === Y) o.now += x; } }
+  const span = D.span || D.months, part = D.months < 12;
+  const draw = () => {
+    let reg = 0, one = 0;
+    for(const [c, v] of Object.entries(D.out)){ const its = typeof v === 'number' ? {'': v} : v;
+      for(const [i, x] of Object.entries(its)) if(x > 0){ if(isOneOff(D, c, i || null)) one += x; else reg += x; } }
+    const regY = part ? reg * 12 / span : reg;
+    const cats = Object.keys(items).sort((a,b) => Object.values(items[b]).reduce((s,o)=>s+o.all,0) - Object.values(items[a]).reduce((s,o)=>s+o.all,0));
+    const body = document.getElementById('cmpBody');
+    body.innerHTML = `<div class="oo-sum">
+        <div><span class="k">Regular</span><b class="mono">${gbp(reg)}</b>${part ? `<span class="s">≈ ${gbp(regY)} for the full year</span>` : ''}</div>
+        <div><span class="k">One-offs</span><b class="mono">${gbp(one)}</b><span class="s">counted as spent</span></div>
+        <div><span class="k">${part ? 'Full year, projected' : 'Year total'}</span><b class="mono">${gbp(regY + one)}</b><span class="s">${part ? `regular ×${+(12/span).toFixed(2)} + one-offs` : lab(Y)}</span></div>
+      </div>
+      <p class="note" style="margin:4px 2px 10px">Amounts are ${lab(Y)}${part ? ' so far' : ''}. Your choice applies to every year. <span class="oo-auto-key">Auto</span> means the app guessed; tap to decide.</p>` +
+      cats.map(c => { const its = Object.entries(items[c]).sort((a,b) => b[1].all - a[1].all);
+        return `<section class="oo-cat"><h3><i style="background:${famColor(CATS[c]||'home')}"></i>${esc(c)}</h3><ul>` + its.map(([i, o]) => {
+          const k = ovrKey(c, i || null), set = ONEOFF_SET[k], on = isOneOff(D, c, i || null);
+          return `<li><span class="nm">${esc(i || c)}${set ? '' : ' <em class="oo-auto-key">Auto</em>'}</span><span class="am mono">${o.now ? gbp(o.now) : '–'}</span>
+            <span class="seg2" role="group" aria-label="${esc(i || c)}"><button class="${on ? '' : 'on'}" data-k="${esc(k)}" data-v="reg" aria-pressed="${!on}">Regular</button><button class="${on ? 'on' : ''}" data-k="${esc(k)}" data-v="one" aria-pressed="${on}">One-off</button></span></li>`; }).join('') + `</ul></section>`; }).join('') +
+      (Object.keys(ONEOFF_SET).some(k => k.startsWith((isNW() ? 'nw' : 'joint') + '|')) ? `<p style="margin:14px 2px"><button class="linkbtn" id="ooReset">Go back to the app’s guesses</button></p>` : '');
+    body.querySelectorAll('.seg2 button').forEach(b => b.onclick = () => { ONEOFF_SET[b.dataset.k] = b.dataset.v; try{ localStorage.setItem(OVR_KEY, JSON.stringify(ONEOFF_SET)); }catch(e){}
+      const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; render(); });
+    const rs = document.getElementById('ooReset'); if(rs) rs.onclick = () => { const p = (isNW() ? 'nw' : 'joint') + '|'; Object.keys(ONEOFF_SET).forEach(k => { if(k.startsWith(p)) delete ONEOFF_SET[k]; });
+      try{ localStorage.setItem(OVR_KEY, JSON.stringify(ONEOFF_SET)); }catch(e){} draw(); render(); };
+  };
+  document.getElementById('cmpTitle').textContent = 'One-off or regular';
+  document.querySelector('#cmp .eyebrow').textContent = isNW() ? 'Your NatWest spending' : 'Joint account spending';
+  const subEl = document.getElementById('cmpSub'); subEl.textContent = 'Regular costs are scaled up to a full year when a year isn’t finished; one-offs aren’t.';
+  if(back){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← Back'; b.onclick = back; subEl.prepend(b, ' · '); }
+  draw();
+  const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
+}
+let yearsMode = 'out', yearsPin = null, yearsNoOne = false;
 const compact = v => v >= 9500 ? '£' + Math.round(v/1000) + 'k' : v >= 1000 ? '£' + (v/1000).toFixed(1) + 'k' : '£' + Math.round(v);
 function openYears(mode, year, pin){
   if((mode || 'out') !== yearsMode) pin = null;   // a pinned category doesn't carry across money in / out
@@ -1081,8 +1143,9 @@ function openYears(mode, year, pin){
     return t + (typeof v==='number' ? v*proFactor(D,k,null) : Object.entries(v).reduce((a,[i,x])=>a+x*proFactor(D,k,i),0)); }, 0);
   const cols = yrs.map(y => {
     const D = DATA.years[y], m = {};
+    const keep = (cat, k) => !(yearsNoOne && isOneOff(D, cat, k));   // "Regular only": leave one-offs out
     if(mode==='out') for(const [cat,v] of Object.entries(D.out)){
-      const a = typeof v==='number' ? v*proFactor(D,cat,null) : Object.entries(v).reduce((t,[k,x])=>t+x*proFactor(D,cat,k),0);
+      const a = typeof v==='number' ? (keep(cat,null) ? v*proFactor(D,cat,null) : 0) : Object.entries(v).reduce((t,[k,x])=>t+(keep(cat,k) ? x*proFactor(D,cat,k) : 0),0);
       if(a > 0) m[cat] = a; }
     else for(const [k,v] of Object.entries(D.income)){ const a = v*proFactor(D,'income',k); if(a > 0) m[k] = a; }
     return {y, D, m, tot:Object.values(m).reduce((a,b)=>a+b,0), other: proTot(D, mode==='out' ? 'in' : 'out')};
@@ -1103,6 +1166,10 @@ function openYears(mode, year, pin){
   subEl.textContent = (pin ? `${pin} pinned to the top · tap it again for detail` : 'Tap any block, flow or row to pin it to the top') + ' · same scale for every ' + (isStm() ? 'month' : 'year') + (mode==='out' ? ' · dashed line = money in' : '') + (cols.some(c=>c.D.months<12) ? ' · part years ongoing-costs pro-rated (≈)' : '') + ' · ';
   const sw = document.createElement('button'); sw.className = 'linkbtn'; sw.textContent = mode==='out' ? 'Show money in' : 'Show money out';
   sw.onclick = () => openYears(mode==='out' ? 'in' : 'out', year); subEl.append(sw);
+  if(mode==='out'){ const oo = document.createElement('button'); oo.className = 'linkbtn'; oo.textContent = yearsNoOne ? 'Include one-offs' : 'Regular spending only';
+    oo.onclick = () => { yearsNoOne = !yearsNoOne; openYears(mode, year, pin); }; subEl.append(' · ', oo);
+    const ed = document.createElement('button'); ed.className = 'linkbtn'; ed.textContent = 'Choose one-offs ›'; ed.onclick = () => openOneOffs(year, () => openYears(mode, year, pin)); subEl.append(' · ', ed);
+    if(yearsNoOne) document.querySelector('#cmp .eyebrow').textContent += ' · regular spending only'; }
   if(pin){ const un = document.createElement('button'); un.className = 'linkbtn'; un.textContent = 'Unpin'; un.onclick = () => openYears(mode, year, null); subEl.append(' · ', un); }
 
   const body = document.getElementById('cmpBody');
@@ -1162,6 +1229,7 @@ function openYears(mode, year, pin){
   document.getElementById('cmpX').focus({preventScroll:true});
 }
 document.getElementById('yearsBtn').onclick = () => openYears('out', prefs.year);
+document.getElementById('oneOffBtn').onclick = () => openOneOffs(prefs.year);
 function drawPanel(el, r, o){
   const W = el.clientWidth || el.parentNode.clientWidth, nw = 8;
   const svg = d3.select(el).attr('width', W).attr('viewBox', `0 0 ${W} ${el.getAttribute('height')}`);
@@ -1576,6 +1644,7 @@ function render(){
   const yrs = Object.keys(DATA.years).sort();
   if(!prefs.year || !DATA.years[prefs.year]) prefs.year = isStm() ? 'ALL' : (yrs.find(y=>DATA.years[y].months>=12 && y===String(new Date().getFullYear()-1)) || yrs[yrs.length-1]);
   document.getElementById('yearsBtn').textContent = isStm() ? 'Compare months' : 'Compare all years';
+  document.getElementById('oneOffBtn').hidden = isStm();
   document.getElementById('yearTabs').classList.toggle('many', yrs.length > 6);
   const year = prefs.year, d = DATA.years[year];
     document.getElementById('src').textContent = DATA.source + '.';
