@@ -367,7 +367,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.9.2';
+const APP_VERSION = '1.9.3';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1341,13 +1341,16 @@ const STUDENT = {id:'student', name:'Student loan', group:'Liabilities', counted
   note:'Balances from your student loan sheet (2021–Mar 2025), then rolled forward: salary deductions to May 2026 and the £242 direct debit from July 2026, landing on £1,982.80 on 9 Oct 2026. Months between known balances are estimates. About 8 payments of £242 remain, so roughly June 2027.'};
 // Replaces sheet figures that were left flat: from Jul 2025 the sheet shows Invest 5 at £11,155 (it looks like Invest 3 was still counted),
 // but the fund's own transaction history shows only £6.5k bought in March 2025 plus small top-ups. Value = units held × interpolated unit price.
-const OVR = {'nwi5':{'2025-07':7029,'2025-08':7495,'2025-09':8137,'2025-10':8662,'2025-11':10319,'2025-12':10934}};
+const OVR = {'nwi3':{'2025-07':5858,'2025-08':0}, 'nwi5':{'2025-07':7029,'2025-08':7495,'2025-09':8137,'2025-10':8662,'2025-11':10319,'2025-12':10934}};
 const CLOSED = {
-  'nwi3':{when:'Jul 2025', amt:5524}, 'etoro':{when:'Jul 2025', amt:908}, 'etoro-usd':{when:'Jan 2025', amt:null}
+  'nwi3':{when:'Aug 2025', amt:5858}, 'etoro':{when:'Jul 2025', amt:908}, 'etoro-usd':{when:'Jan 2025', amt:null}
 };
 // Account closures: money taken out and spent, so the drop is a withdrawal, not an investment loss.
-const EVENTS = {'2025-07':{label:'Invest 3 & eToro closed', text:'Invest 3 (£5,524) and eToro (£908) closed: about £6,432 withdrawn and spent, probably on the 2025 holidays. It’s money taken out, not an investment loss. Invest 5 didn’t receive it: the fund’s own history shows no lump coming in then.'}};
-const NOTES = {'nwi3':'Closed Jul 2025. The £5,524 was withdrawn and spent rather than moved to Invest 5, so its disappearance is a withdrawal, not a loss.','etoro':'Closed Jul 2025 (it had already dropped from £2,841 to £698 in March 2025, money taken out). The last £908 was withdrawn and spent, not moved to Invest 5.','etoro-usd':'Closed around January 2025. It was never in your sheet’s own total, so closing it doesn’t change your net worth here.','reu-edge':'From January 2026 this is the December figure plus £85 a month (your sheet stops at December 2025).','viv':'From January 2026 this is the December figure plus £85 a month (your sheet stops at December 2025).','nwi5':'Jul–Dec 2025 rebuilt from the fund’s transaction history (units held × unit price). The sheet had £11,155 flat for those months, which doesn’t match the money actually paid in.'};
+const EVENTS = {
+  '2025-07':{label:'eToro closed', text:'The last £908 in eToro was withdrawn. It’s money taken out, not an investment loss.'},
+  '2025-08':{label:'Invest 3 sold', text:'All the Invest 3 funds were sold for £5,858 and the money taken out. It’s a withdrawal, not an investment loss, and Invest 5 didn’t receive it: the fund’s own history shows no lump coming in then.'}
+};
+const NOTES = {'nwi3':'All funds sold in August 2025 for £5,858 (July shown at that value; your sheet had it at £0 from July). The money was withdrawn rather than moved to Invest 5, so its disappearance is a withdrawal, not a loss.','etoro':'Closed Jul 2025 (it had already dropped from £2,841 to £698 in March 2025, money taken out). The last £908 was withdrawn and spent, not moved to Invest 5.','etoro-usd':'Closed around January 2025. It was never in your sheet’s own total, so closing it doesn’t change your net worth here.','reu-edge':'From January 2026 this is the December figure plus £85 a month (your sheet stops at December 2025).','viv':'From January 2026 this is the December figure plus £85 a month (your sheet stops at December 2025).','nwi5':'Jul–Dec 2025 rebuilt from the fund’s transaction history (units held × unit price). The sheet had £11,155 flat for those months, which doesn’t match the money actually paid in.'};
 function withAdds(F){
   const months = new Set(F.months);
   const assets = F.assets.map(a => { const add = ADDS[a.id], ovr = OVR[a.id]; if(!add && !ovr) return NOTES[a.id] ? Object.assign({}, a, {note:NOTES[a.id]}) : a; const series = Object.assign({}, a.series);
@@ -1447,9 +1450,9 @@ function renderWorth(){
   svg.append('path').attr('d', line(vals.map(v=>v.total))).attr('fill','none').attr('stroke', css('--paper')).attr('stroke-width', 2);
   const fp = ms.map(m => M.F.afterPots[m]), fpPts = fp.map((v,i) => !v ? null : [i,v]).filter(Boolean);
   if(fpPts.length > 2) svg.append('path').attr('d', d3.line().x(d=>x(d[0])).y(d=>y(d[1])).curve(d3.curveMonotoneX)(fpPts)).attr('fill','none').attr('stroke', css('--paper')).attr('stroke-width', 1.5).attr('stroke-dasharray','4 3');
-  ms.forEach((m,i) => { const e = EVENTS[m]; if(!e) return;
-    svg.append('line').attr('x1',x(i)).attr('x2',x(i)).attr('y1',T+12).attr('y2',H-B).attr('stroke', css('--mustard')).attr('stroke-width',1.2).attr('stroke-dasharray','3 3');
-    svg.append('text').attr('x',x(i)+4).attr('y',T+10).attr('class','ax').attr('text-anchor', x(i) > W*0.7 ? 'end' : 'start').attr('dx', x(i) > W*0.7 ? -8 : 0).text(e.label + ' (withdrawn)'); });
+  let evN = 0; ms.forEach((m,i) => { const e = EVENTS[m]; if(!e) return; const ey = T + 10 + 12*(evN++);
+    svg.append('line').attr('x1',x(i)).attr('x2',x(i)).attr('y1',ey+2).attr('y2',H-B).attr('stroke', css('--mustard')).attr('stroke-width',1.2).attr('stroke-dasharray','3 3');
+    svg.append('text').attr('x',x(i)+4).attr('y',ey).attr('class','ax').attr('text-anchor', x(i) > W*0.7 ? 'end' : 'start').attr('dx', x(i) > W*0.7 ? -8 : 0).text(e.label + ' (withdrawn)'); });
   const rule = svg.append('line').attr('y1',T).attr('y2',H-B).attr('stroke', css('--paper')).attr('stroke-width',1).attr('opacity',0);
   const dot = svg.append('circle').attr('r',4).attr('fill', css('--paper')).attr('opacity',0);
   const read = document.getElementById('wRead');
