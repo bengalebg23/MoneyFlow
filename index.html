@@ -36,6 +36,15 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.11.0 — Payslip check (openPayslips). Each month the app asks Ben to confirm his
+           payslip lines (the Full Summary "Salary" block: monthly salary, bonuses,
+           holiday buy, pension, car, BIK, tax, NI, student loan, SSC500), pre-filled
+           from the month before (first month: the sheet's figures). Net pay is checked
+           against the HORIBA MIRA credit on the NatWest statement (or a typed amount
+           for months with no statement yet); a mismatch shows under "Worth checking".
+           Payslips screen: year totals, a bar per month splitting pay into take-home,
+           tax, NI, pension, student loan and other. Stored in localStorage (PAY_KEY).
+           The ask banner only chases the latest pay month (due from the 15th).
   v1.10.0 — "One-offs" screen (openOneOffs): every spending item with a Regular /
            One-off switch; choices are saved per account in localStorage (OVR_KEY,
            held in ONEOFF_SET) and beat the app's guess in isOneOff. Shows regular,
@@ -96,7 +105,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.5.1</title>
+<title>Money Flow v1.11.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -324,6 +333,23 @@
   #assetsView .m-split{opacity:.4; height:5px;} #assetsView .as-sec:last-of-type .as-head .mono, #assetsView .as-debts .as-head .mono{color:var(--paper-dim);}
   .as-gone summary{font-size:12px; color:var(--paper-dim); padding:6px 0; cursor:pointer;} .spark{display:block;}
   .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--paper); color:#fff; padding:9px 14px; border-radius:10px; font-size:13px; z-index:40; max-width:90vw;}
+  .pay-req{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 14px 0; padding:10px 12px; border:1px solid var(--c-home); background:rgba(42,120,214,.07); border-radius:10px; font-size:13px;}
+  .pay-req p{margin:0; flex:1 1 180px;} .pay-req b{font-weight:700;} .pay-req .btns{flex:none;}
+  .ps-sum{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;} .ps-sum>div{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:2px; min-width:0;}
+  .ps-sum .k{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--paper-dim);} .ps-sum b{font-size:15px;}
+  .ps-chart{width:100%; height:auto; display:block;} .ps-chart text{font:10.5px 'IBM Plex Mono',monospace; fill:var(--paper-dim);}
+  .ps-key{display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11.5px; color:var(--paper-dim); margin:4px 2px 0;} .ps-key i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px;}
+  .ps-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+  .ps-list li{display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:9px 4px; border-bottom:1px solid var(--line); cursor:pointer;}
+  .ps-list .st{font-size:12px; font-weight:600;} .ps-list .st.ok{color:var(--today);} .ps-list .st.bad{color:var(--c-gap);} .ps-list .st.todo{color:var(--c-home);} .ps-list .st.skip{color:var(--paper-dim); font-weight:500;}
+  .ps-form h4{margin:14px 2px 4px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-dim);}
+  .ps-row{display:grid; grid-template-columns:minmax(0,1fr) 120px; gap:10px; align-items:center; padding:5px 2px; border-bottom:1px solid var(--line);}
+  .ps-row label{font-size:14px;} .ps-row label small{display:block; font-size:11px; color:var(--paper-dim);}
+  .ps-row input{font:15px 'IBM Plex Mono',monospace; text-align:right; padding:7px 8px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--paper); width:100%; box-sizing:border-box;}
+  .ps-row input.chg{border-color:var(--mustard); box-shadow:0 0 0 1px var(--mustard);}
+  .ps-tot{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; padding:7px 2px; font-size:14px; border-bottom:1px solid var(--line);} .ps-tot b{font-family:'IBM Plex Mono',monospace;}
+  .ps-tie{margin:10px 0 0; padding:10px 12px; border-radius:10px; font-size:13px; font-weight:600;} .ps-tie.ok{background:rgba(47,168,79,.1); color:var(--today);} .ps-tie.bad{background:rgba(227,73,72,.1); color:var(--c-gap);}
+  .ps-acts{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;}
   @media (max-width:520px){ .stats{grid-template-columns:1fr 1fr;} .stats .stat:last-child{grid-column:1/-1;} }
 </style>
 </head>
@@ -340,11 +366,13 @@
 </header>
 
 <main>
+  <div class="pay-req" id="payReq" hidden></div>
   <div class="bar">
     <p class="src" id="zoomHint"></p>
     <div class="btns">
       <button class="btn" id="yearsBtn">Compare all years</button>
       <button class="btn" id="oneOffBtn">One-offs</button>
+      <button class="btn" id="payBtn" hidden>Payslips</button>
       <button class="btn primary" id="loadBtn">Load spreadsheet</button>
       <button class="btn" id="resetBtn" hidden>Use built-in figures</button>
       <input type="file" id="fileIn" accept=".xlsx,.xlsm,.xls" hidden>
@@ -385,7 +413,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.10.1';
+const APP_VERSION = '1.11.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1156,6 +1184,135 @@ function openOneOffs(year, back){
   draw();
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
 }
+
+// ── Payslip check ─────────────────────────────────────────────────────────
+// Lines follow the "Salary" block on the Full Summary sheet. Amounts are typed as
+// positive numbers; s says which way they count. BIK is taxable but never paid.
+const PAY_KEY = 'moneyflow.payslips.v1';
+const PAY_LINES = [
+  {k:'basic',    n:'Monthly salary',   g:'Pay',               s: 1, d:5417},
+  {k:'bonus',    n:'Bonuses',          g:'Pay',               s: 1, d:0},
+  {k:'otherPay', n:'Other pay',        g:'Pay',               s: 1, d:0,   h:'back pay, overtime, anything else paid'},
+  {k:'holiday',  n:'Holiday buy',      g:'Salary sacrifice',  s:-1, d:108},
+  {k:'pension',  n:'Pension',          g:'Salary sacrifice',  s:-1, d:433},
+  {k:'car',      n:'Car',              g:'Salary sacrifice',  s:-1, d:60},
+  {k:'bik',      n:'BIK',              g:'Taxable benefit',   s: 0, d:144, h:'adds to taxable pay, not to what you get'},
+  {k:'tax',      n:'Tax',              g:'Deductions',        s:-1, d:936},
+  {k:'ni',       n:'NI',               g:'Deductions',        s:-1, d:264},
+  {k:'student',  n:'Student loan',     g:'Deductions',        s:-1, d:237},
+  {k:'ssc',      n:'SSC500',           g:'Deductions',        s:-1, d:11},
+  {k:'otherDed', n:'Other deductions', g:'Deductions',        s:-1, d:0}
+];
+let PAYSLIPS = {}; try{ PAYSLIPS = JSON.parse(localStorage.getItem(PAY_KEY) || '{}') || {}; }catch(e){ PAYSLIPS = {}; }
+const savePayslips = () => { try{ localStorage.setItem(PAY_KEY, JSON.stringify(PAYSLIPS)); return true; }catch(e){ toast('Couldn’t save on this device: ' + e.message); return false; } };
+let payLater = false;   // "Later" hides the ask until the app is next opened
+const payCalc = v => {
+  const g = x => +v[x] || 0;
+  const pay = g('basic') + g('bonus') + g('otherPay'), sac = g('holiday') + g('pension') + g('car');
+  const gross = pay - sac, ded = g('tax') + g('ni') + g('student') + g('ssc') + g('otherDed');
+  return {pay, sac, gross, taxable: gross + g('bik'), ded, net: +(gross - ded).toFixed(2)};
+};
+const PAY_CREDITS = (() => { const o = {};   // month → {amt, date} of the HORIBA MIRA salary credit on the statements
+  NW_TXNS.forEach(t => { if(t[3] === 'in' && t[4] === 'Salary'){ const m = t[0].slice(0,7); o[m] = o[m] || {amt:0, date:t[0]}; o[m].amt = +(o[m].amt + t[1]).toFixed(2); } });
+  return o; })();
+function payMonths(){   // every pay month from the first statement salary to the latest one that's due (paid around the 15th)
+  const ks = Object.keys(PAY_CREDITS).sort(); if(!ks.length) return [];
+  const now = new Date(), last = now.getDate() >= 15 ? now : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const end = `${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,'0')}`, out = [];
+  let [y, m] = ks[0].split('-').map(Number);
+  for(let i = 0; i < 240; i++){ const k = `${y}-${String(m).padStart(2,'0')}`; out.push(k); if(k >= end && k >= ks[ks.length-1]) break; m++; if(m > 12){ m = 1; y++; } }
+  return out;
+}
+const payRecv = m => PAY_CREDITS[m] ? PAY_CREDITS[m].amt : (PAYSLIPS[m] && typeof PAYSLIPS[m].recv === 'number' ? PAYSLIPS[m].recv : null);
+const payGap = m => { const r = payRecv(m), p = PAYSLIPS[m]; return p && r !== null ? +(r - payCalc(p.v).net).toFixed(2) : null; };
+function payPrefill(m){   // the confirmed month before, else the sheet's figures
+  const prev = Object.keys(PAYSLIPS).filter(k => k < m && PAYSLIPS[k].v).sort().pop();
+  if(prev) return {v: Object.assign({}, PAYSLIPS[prev].v), from: mLabel(prev)};
+  const v = {}; PAY_LINES.forEach(l => v[l.k] = l.d); return {v, from: 'your sheet'};
+}
+function payChecks(year){   // mismatches for the "Worth checking" list on Ben's tab
+  return Object.keys(PAYSLIPS).sort().filter(m => { const gp = payGap(m); if(gp === null || Math.abs(gp) < 0.005) return false;
+    if(!year || year === 'ALL') return true; if(year.length === 4) return m.slice(0,4) === year;
+    const [y, mm] = m.split('-').map(Number), st = mm === 12 ? `${y+1}-01` : `${y}-${String(mm+1).padStart(2,'0')}`; return st === year; })
+    .map(m => { const gp = payGap(m); return {src:'nw', text:`${mLabel(m)} payslip: net pay ${gbp2(payCalc(PAYSLIPS[m].v).net)} but ${gbp2(payRecv(m))} landed in NatWest (${gp > 0 ? 'more' : 'less'} by ${gbp2(gp)}).`}; });
+}
+function renderPayReq(){
+  const el = document.getElementById('payReq'), ms = payMonths(), m = ms[ms.length-1];
+  if(!m || PAYSLIPS[m] || payLater){ el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<p><b>Payslip check · ${mLabel(m)}</b><br>Confirm this month’s payslip lines so your pay can be broken down.</p>
+    <div class="btns"><button class="btn primary" id="payGo">Check now</button><button class="btn" id="payLater">Later</button></div>`;
+  document.getElementById('payGo').onclick = () => openPayslip(m, () => openPayslips());
+  document.getElementById('payLater').onclick = () => { payLater = true; renderPayReq(); };
+}
+const PAY_SEGS = [['Take-home', '--c-left', c => c.net], ['Tax', '--c-gap', (c,v) => +v.tax||0], ['NI', '--c-food', (c,v) => +v.ni||0],
+  ['Pension', '--c-annual', (c,v) => +v.pension||0], ['Student loan', '--c-trips', (c,v) => +v.student||0],
+  ['Other', '--c-in', (c,v) => (+v.holiday||0) + (+v.car||0) + (+v.ssc||0) + (+v.otherDed||0)]];
+function payChart(ms){
+  const W = 340, L = 54, R = 52, rh = 20, H = ms.length * rh + 4, max = Math.max(...ms.map(m => payCalc(PAYSLIPS[m].v).pay), 1), sc = (W - L - R) / max;
+  const rows = ms.map((m, i) => { const v = PAYSLIPS[m].v, c = payCalc(v); let x = L;
+    const segs = PAY_SEGS.map(([n, col, f]) => { const w = Math.max(0, f(c, v)) * sc, r = w > 0 ? `<rect x="${x.toFixed(1)}" y="${i*rh+3}" width="${w.toFixed(1)}" height="${rh-6}" fill="${css(col)}"><title>${n} ${gbp2(f(c, v))}</title></rect>` : ''; x += w; return r; }).join('');
+    return `<text x="0" y="${i*rh+rh/2+4}">${mLabel(m).replace(' 20',' ’')}</text>${segs}<text x="${W}" y="${i*rh+rh/2+4}" text-anchor="end">${gbp(c.net)}</text>`; }).join('');
+  return `<svg class="ps-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Pay each month split into take-home and deductions">${rows}</svg>
+    <div class="ps-key">${PAY_SEGS.map(([n, col]) => `<span><i style="background:${css(col)}"></i>${n}</span>`).join('')}</div>`;
+}
+function payOpenShell(eyebrow, title, sub){
+  document.querySelector('#cmp .eyebrow').textContent = eyebrow;
+  document.getElementById('cmpTitle').textContent = title;
+  document.getElementById('cmpSub').textContent = sub;
+  const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
+  return document.getElementById('cmpBody');
+}
+function openPayslips(){
+  const ms = payMonths(), done = ms.filter(m => PAYSLIPS[m]), yrs = [...new Set(done.map(m => m.slice(0,4)))].sort();
+  const body = payOpenShell('Ben’s pay', 'Payslips', 'Confirm each month’s lines; net pay is checked against what landed in NatWest.');
+  const yr = yrs[yrs.length-1], inY = done.filter(m => m.slice(0,4) === yr);
+  const tot = k => inY.reduce((s, m) => s + (k === 'net' ? payCalc(PAYSLIPS[m].v).net : k === 'pay' ? payCalc(PAYSLIPS[m].v).pay : (+PAYSLIPS[m].v[k] || 0)), 0);
+  const sum = inY.length ? `<p class="note" style="margin:0 2px">${yr} · ${inY.length} checked month${inY.length>1?'s':''}</p><div class="ps-sum">
+      ${[['Total pay','pay'],['Take-home','net'],['Tax','tax'],['NI','ni'],['Pension','pension'],['Student loan','student']].map(([n,k]) => `<div><span class="k">${n}</span><b class="mono">${gbp(tot(k))}</b></div>`).join('')}
+    </div><div class="card" style="padding:10px 12px">${payChart(done.slice(-12))}</div>` : `<p class="note" style="margin:0 2px">No payslips checked yet. Tap a month to start; each one is pre-filled from the month before.</p>`;
+  const list = `<ul class="ps-list">${ms.slice().reverse().map(m => { const p = PAYSLIPS[m], gp = payGap(m), r = payRecv(m);
+      const st = !p ? `<span class="st todo">To check</span>` : gp === null ? `<span class="st skip">Checked · no bank figure</span>` : Math.abs(gp) < 0.005 ? `<span class="st ok">✓ Ties</span>` : `<span class="st bad">⚠ ${gbp2(gp)} out</span>`;
+      return `<li data-m="${m}"><span>${mLabel(m)}</span><span class="mono" style="font-size:12px">${r === null ? '–' : gbp2(r)}</span>${st}</li>`; }).join('')}</ul>`;
+  body.innerHTML = sum + `<h4 style="margin:6px 2px -6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-dim)">Months · received in NatWest</h4>` + list +
+    `<p class="note" style="margin:0 2px">Saved on this phone only. Months after the last statement need the amount received typed in.</p>`;
+  body.querySelectorAll('.ps-list li').forEach(li => li.onclick = () => setTimeout(() => openPayslip(li.dataset.m, openPayslips), 0));
+}
+function openPayslip(m, back){
+  const had = PAYSLIPS[m], pre = had ? {v: Object.assign({}, had.v), from: null} : payPrefill(m), v = pre.v, base = Object.assign({}, v);
+  const cr = PAY_CREDITS[m];
+  const body = payOpenShell('Payslip check', mLabel(m), had ? 'Already confirmed. Change anything that’s wrong and confirm again.' : `Pre-filled from ${pre.from}. Change anything that’s different on your payslip, then confirm.`);
+  const sub = document.getElementById('cmpSub');
+  if(back){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← Payslips'; b.onclick = back; sub.prepend(b, ' · '); }
+  const fmt = x => (+x || 0).toFixed(2);
+  let html = '<div class="ps-form">', grp = '';
+  PAY_LINES.forEach(l => { if(l.g !== grp){ grp = l.g; html += `<h4>${grp}</h4>`; }
+    html += `<div class="ps-row"><label for="ps_${l.k}">${l.n}${l.h ? `<small>${l.h}</small>` : ''}</label><input id="ps_${l.k}" data-k="${l.k}" inputmode="decimal" autocomplete="off" value="${fmt(v[l.k])}"></div>`; });
+  html += `<h4>In the bank</h4><div class="ps-row"><label for="ps_recv">Received in NatWest<small>${cr ? 'from the statement, ' + cr.date.split('-').reverse().join('/') : 'no statement yet, type what landed'}</small></label>
+      <input id="ps_recv" inputmode="decimal" autocomplete="off" ${cr ? `value="${fmt(cr.amt)}" disabled` : `value="${had && typeof had.recv === 'number' ? fmt(had.recv) : ''}" placeholder="0.00"`}></div>
+    <div id="psTot"></div><div class="ps-acts"><button class="btn primary" id="psOk">Confirm payslip</button>${had ? '<button class="btn" id="psDel">Remove</button>' : ''}</div></div>`;
+  body.innerHTML = html;
+  const num = el => { const x = parseFloat(String(el.value).replace(/[£,\s]/g,'')); return isFinite(x) ? Math.abs(x) : 0; };
+  const recvVal = () => { if(cr) return cr.amt; const t = document.getElementById('ps_recv').value.trim(); return t === '' ? null : num(document.getElementById('ps_recv')); };
+  const upd = () => {
+    body.querySelectorAll('input[data-k]').forEach(el => { v[el.dataset.k] = num(el); el.classList.toggle('chg', Math.abs(v[el.dataset.k] - (+base[el.dataset.k] || 0)) >= 0.005); });
+    const c = payCalc(v), r = recvVal(), gp = r === null ? null : +(r - c.net).toFixed(2);
+    document.getElementById('psTot').innerHTML = `<h4>Works out as</h4>
+      <div class="ps-tot"><span>Gross salary <small style="color:var(--paper-dim)">(after sacrifice)</small></span><b>${gbp2(c.gross)}</b></div>
+      <div class="ps-tot"><span>Taxable pay</span><b>${gbp2(c.taxable)}</b></div>
+      <div class="ps-tot"><span>Net pay</span><b>${gbp2(c.net)}</b></div>
+      ${gp === null ? '<p class="note" style="margin:8px 2px 0">Type what landed in NatWest to check it ties.</p>' : `<p class="ps-tie ${Math.abs(gp) < 0.005 ? 'ok' : 'bad'}">${Math.abs(gp) < 0.005 ? '✓ Ties to what landed in NatWest' : `⚠ ${gbp2(gp)} ${gp > 0 ? 'more' : 'less'} landed than this payslip adds up to`}</p>`}`;
+  };
+  body.querySelectorAll('input').forEach(el => { el.oninput = upd; el.onfocus = () => el.select(); });
+  upd();
+  document.getElementById('psOk').onclick = () => {
+    upd(); const rec = {v: Object.assign({}, v), at: new Date().toISOString().slice(0,10)}; const r = recvVal(); if(!cr && r !== null) rec.recv = r;
+    PAYSLIPS[m] = rec; if(!savePayslips()) return;
+    const gp = payGap(m); toast(gp === null || Math.abs(gp) < 0.005 ? `${mLabel(m)} payslip confirmed` : `${mLabel(m)} saved · ${gbp2(gp)} out, flagged to check`);
+    setTimeout(() => { render(); if(back) back(); else closeCompare(); }, 0);
+  };
+  const del = document.getElementById('psDel'); if(del) del.onclick = () => { if(!confirm(`Remove the ${mLabel(m)} payslip?`)) return; delete PAYSLIPS[m]; savePayslips(); setTimeout(() => { render(); if(back) back(); else closeCompare(); }, 0); };
+}
 let yearsMode = 'out', yearsPin = null, yearsNoOne = false;
 const compact = v => v >= 9500 ? '£' + Math.round(v/1000) + 'k' : v >= 1000 ? '£' + (v/1000).toFixed(1) + 'k' : '£' + Math.round(v);
 function openYears(mode, year, pin){
@@ -1255,6 +1412,7 @@ function openYears(mode, year, pin){
 }
 document.getElementById('yearsBtn').onclick = () => openYears('out', prefs.year);
 document.getElementById('oneOffBtn').onclick = () => openOneOffs(prefs.year);
+document.getElementById('payBtn').onclick = () => openPayslips();
 function drawPanel(el, r, o){
   const W = el.clientWidth || el.parentNode.clientWidth, nw = 8;
   const svg = d3.select(el).attr('width', W).attr('viewBox', `0 0 ${W} ${el.getAttribute('height')}`);
@@ -1651,6 +1809,8 @@ function renderAssets(){
 function render(){
   applySrc();
   const flow = isFlow();
+  renderPayReq();
+  document.getElementById('payBtn').hidden = !isNW();
   document.getElementById('flowView').hidden = !flow;
   document.getElementById('worthView').hidden = prefs.src !== 'worth';
   document.getElementById('assetsView').hidden = prefs.src !== 'assets';
@@ -1704,7 +1864,7 @@ function render(){
 
 function renderChecks(year){
   const el = document.getElementById('checks'), src = isNW() ? 'nw' : prefs.src === 'joint' ? 'joint' : null;
-  const list = src ? CHECKS.filter(c => (c.src === src || c.src === 'all') && (!c.year || c.year === year || (isStm() && c.src === 'nw'))) : [];
+  const list = (src ? CHECKS.filter(c => (c.src === src || c.src === 'all') && (!c.year || c.year === year || (isStm() && c.src === 'nw'))) : []).concat(src === 'nw' ? payChecks(year) : []);
   el.hidden = !list.length;
   el.innerHTML = list.length ? `<li class="ck-h">Worth checking</li>` + list.map(c => `<li>${c.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</li>`).join('') : '';
 }
