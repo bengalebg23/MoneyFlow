@@ -36,6 +36,14 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.12.0 — Payslips import from the sheet. Loading the workbook reads the Full Summary
+           "Salary" block (parsePayslipRows: Monthly Salary, Holiday Buy, Pension, Car,
+           Bonuses, BIK, student loan, SSC500, NI, Tax; between the Salary row and the
+           next Total row) for every month up to now. Sheet months are stored with
+           src:'sheet', shown as "Sheet" in the list, never overwrite a confirmed month,
+           and stay "to check" (the ask banner and Worth checking ignore them until
+           confirmed). "Import from spreadsheet" button on the Payslips pill; loading
+           from there stays on the pill.
   v1.11.1 — Payslips get their own pill in the top tabs (prefs.src 'pay', #payView,
            renderPayslips); the Payslips button is gone. Month forms open over it
            and close back to it.
@@ -108,7 +116,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.11.1</title>
+<title>Money Flow v1.12.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -417,7 +425,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.12.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -765,6 +773,7 @@ function parseSantander(A){
 document.getElementById('loadBtn').onclick = () => document.getElementById('fileIn').click();
 document.getElementById('fileIn').onchange = async ev => {
   const f = ev.target.files[0]; if(!f) return;
+  const wasPay = prefs.src === 'pay';
   try{
     const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
     const ws = wb.Sheets['Santander'];
@@ -776,9 +785,11 @@ document.getElementById('fileIn').onchange = async ev => {
     let extra = '';
     try{ const fs = wb.Sheets['Full Summary'];
       if(fs){ const A = XLSX.utils.sheet_to_json(fs,{header:1,raw:true,defval:null}), full = parseFullSummary(A), ny = parseCashFlowYears(A);
+        const np = importPayslips(A); if(np) extra += ` · ${np} payslip month${np>1?'s':''}`;
         if(full){ FULL = full; if(Object.keys(ny).length) NWY_YEARS = ny; NWY_DATA = {source:`Built from the Expenses section of “${f.name}” (Full Summary sheet)`, years:withStatements(NWY_YEARS)}; usingExtra = true;
-          try{ localStorage.setItem(EXTRA_KEY, JSON.stringify({full, years:NWY_YEARS})); }catch(e){} extra = ' and the Full Summary'; } }
+          try{ localStorage.setItem(EXTRA_KEY, JSON.stringify({full, years:NWY_YEARS})); }catch(e){} extra = ' and the Full Summary' + extra; } }
     }catch(e){ extra = ' (Full Summary not readable)'; }
+    if(wasPay) prefs.src = 'pay';
     prefs.year = null; toast(`Loaded ${Object.keys(years).sort().join(', ')}${extra} from ${f.name}`); render();
   }catch(e){ toast(e.message || 'Couldn’t read that file. Pick the finances .xlsx.'); }
   ev.target.value = '';
@@ -1221,9 +1232,10 @@ const PAY_CREDITS = (() => { const o = {};   // month → {amt, date} of the HOR
   return o; })();
 function payMonths(){   // every pay month from the first statement salary to the latest one that's due (paid around the 15th)
   const ks = Object.keys(PAY_CREDITS).sort(); if(!ks.length) return [];
+  const first = [ks[0], ...Object.keys(PAYSLIPS)].sort()[0];
   const now = new Date(), last = now.getDate() >= 15 ? now : new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const end = `${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,'0')}`, out = [];
-  let [y, m] = ks[0].split('-').map(Number);
+  let [y, m] = first.split('-').map(Number);
   for(let i = 0; i < 240; i++){ const k = `${y}-${String(m).padStart(2,'0')}`; out.push(k); if(k >= end && k >= ks[ks.length-1]) break; m++; if(m > 12){ m = 1; y++; } }
   return out;
 }
@@ -1235,14 +1247,14 @@ function payPrefill(m){   // the confirmed month before, else the sheet's figure
   const v = {}; PAY_LINES.forEach(l => v[l.k] = l.d); return {v, from: 'your sheet'};
 }
 function payChecks(year){   // mismatches for the "Worth checking" list on Ben's tab
-  return Object.keys(PAYSLIPS).sort().filter(m => { const gp = payGap(m); if(gp === null || Math.abs(gp) < 0.005) return false;
+  return Object.keys(PAYSLIPS).sort().filter(m => { const gp = payGap(m); if(PAYSLIPS[m].src === 'sheet' || gp === null || Math.abs(gp) < 0.005) return false;
     if(!year || year === 'ALL') return true; if(year.length === 4) return m.slice(0,4) === year;
     const [y, mm] = m.split('-').map(Number), st = mm === 12 ? `${y+1}-01` : `${y}-${String(mm+1).padStart(2,'0')}`; return st === year; })
     .map(m => { const gp = payGap(m); return {src:'nw', text:`${mLabel(m)} payslip: net pay ${gbp2(payCalc(PAYSLIPS[m].v).net)} but ${gbp2(payRecv(m))} landed in NatWest (${gp > 0 ? 'more' : 'less'} by ${gbp2(gp)}).`}; });
 }
 function renderPayReq(){
   const el = document.getElementById('payReq'), ms = payMonths(), m = ms[ms.length-1];
-  if(!m || PAYSLIPS[m] || payLater){ el.hidden = true; return; }
+  if(!m || (PAYSLIPS[m] && PAYSLIPS[m].src !== 'sheet') || payLater){ el.hidden = true; return; }
   el.hidden = false;
   el.innerHTML = `<p><b>Payslip check · ${mLabel(m)}</b><br>Confirm this month’s payslip lines so your pay can be broken down.</p>
     <div class="btns"><button class="btn primary" id="payGo">Check now</button><button class="btn" id="payLater">Later</button></div>`;
@@ -1275,20 +1287,22 @@ function renderPayslips(){
   const body = document.getElementById('payView');
   const yr = yrs[yrs.length-1], inY = done.filter(m => m.slice(0,4) === yr);
   const tot = k => inY.reduce((s, m) => s + (k === 'net' ? payCalc(PAYSLIPS[m].v).net : k === 'pay' ? payCalc(PAYSLIPS[m].v).pay : (+PAYSLIPS[m].v[k] || 0)), 0);
-  const sum = inY.length ? `<p class="note" style="margin:0 2px">${yr} · ${inY.length} checked month${inY.length>1?'s':''}</p><div class="ps-sum">
+  const sum = inY.length ? `<p class="note" style="margin:0 2px">${yr} · ${inY.length} month${inY.length>1?'s':''}${(n => n ? ` (${n} still the sheet’s figures)` : '')(inY.filter(m => PAYSLIPS[m].src === 'sheet').length)}</p><div class="ps-sum">
       ${[['Total pay','pay'],['Take-home','net'],['Tax','tax'],['NI','ni'],['Pension','pension'],['Student loan','student']].map(([n,k]) => `<div><span class="k">${n}</span><b class="mono">${gbp(tot(k))}</b></div>`).join('')}
     </div><div class="card" style="padding:10px 12px">${payChart(done.slice(-12))}</div>` : `<p class="note" style="margin:0 2px">No payslips checked yet. Tap a month to start; each one is pre-filled from the month before.</p>`;
   const list = `<ul class="ps-list">${ms.slice().reverse().map(m => { const p = PAYSLIPS[m], gp = payGap(m), r = payRecv(m);
-      const st = !p ? `<span class="st todo">To check</span>` : gp === null ? `<span class="st skip">Checked · no bank figure</span>` : Math.abs(gp) < 0.005 ? `<span class="st ok">✓ Ties</span>` : `<span class="st bad">⚠ ${gbp2(gp)} out</span>`;
+      const sh = p && p.src === 'sheet' ? 'Sheet · ' : '';
+      const st = !p ? `<span class="st todo">To check</span>` : sh && gp === null ? `<span class="st todo">Sheet · to check</span>` : gp === null ? `<span class="st skip">Checked · no bank figure</span>` : sh ? `<span class="st ${Math.abs(gp) < 0.005 ? 'ok' : 'bad'}">${Math.abs(gp) < 0.005 ? 'Sheet · ties' : `Sheet · ${gbp2(gp)} out`}</span>` : Math.abs(gp) < 0.005 ? `<span class="st ok">✓ Ties</span>` : `<span class="st bad">⚠ ${gbp2(gp)} out</span>`;
       return `<li data-m="${m}"><span>${mLabel(m)}</span><span class="mono" style="font-size:12px">${r === null ? '–' : gbp2(r)}</span>${st}</li>`; }).join('')}</ul>`;
-  body.innerHTML = sum + `<h4 style="margin:6px 2px -6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-dim)">Months · received in NatWest</h4>` + list +
+  body.innerHTML = `<div class="btns"><button class="btn" id="psImport">Import from spreadsheet</button></div>` + sum + `<h4 style="margin:6px 2px -6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-dim)">Months · received in NatWest</h4>` + list +
     `<p class="note" style="margin:0 2px">Saved on this phone only. Months after the last statement need the amount received typed in.</p>`;
+  document.getElementById('psImport').onclick = () => document.getElementById('fileIn').click();
   body.querySelectorAll('.ps-list li').forEach(li => li.onclick = () => setTimeout(() => openPayslip(li.dataset.m, openPayslips), 0));
 }
 function openPayslip(m, back){
   const had = PAYSLIPS[m], pre = had ? {v: Object.assign({}, had.v), from: null} : payPrefill(m), v = pre.v, base = Object.assign({}, v);
   const cr = PAY_CREDITS[m];
-  const body = payOpenShell('Payslip check', mLabel(m), had ? 'Already confirmed. Change anything that’s wrong and confirm again.' : `Pre-filled from ${pre.from}. Change anything that’s different on your payslip, then confirm.`);
+  const body = payOpenShell('Payslip check', mLabel(m), had && had.src === 'sheet' ? 'From your sheet. Check each line against your payslip, then confirm.' : had ? 'Already confirmed. Change anything that’s wrong and confirm again.' : `Pre-filled from ${pre.from}. Change anything that’s different on your payslip, then confirm.`);
   const sub = document.getElementById('cmpSub');
   if(back){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← Payslips'; b.onclick = back; sub.prepend(b, ' · '); }
   const fmt = x => (+x || 0).toFixed(2);
@@ -1477,6 +1491,27 @@ function fsHeader(A){
   (A[mo]||[]).forEach((v,c) => { const m = FS_MON.indexOf(str(v).slice(0,3).toLowerCase()), y = +(A[mo-1]||[])[c];
     if(m>=0 && str(v).length<=5 && y>=2000 && y<2100) cols.push({c, y, m, key:`${y}-${String(m+1).padStart(2,'0')}`}); });
   return cols.length ? {cols, mo} : null;
+}
+// Payslip lines from the Full Summary "Salary" block (labels in col A or B; deductions are negative on the sheet).
+const PAY_ROWS = [[/^monthly salary$/i,'basic'],[/^holiday buy/i,'holiday'],[/^pension$/i,'pension'],[/^car$/i,'car'],[/^bonus/i,'bonus'],
+  [/^bik$/i,'bik'],[/^stu\w*\s*loan/i,'student'],[/^ssc/i,'ssc'],[/^ni$/i,'ni'],[/^tax$/i,'tax']];
+function parsePayslipRows(A){
+  const H = fsHeader(A); if(!H) return {};
+  const str = v => v==null ? '' : String(v).trim(), lab = r => str((A[r]||[])[0]) || str((A[r]||[])[1]);
+  const start = A.findIndex((r,i) => i>H.mo && /^salary$/i.test(lab(i))); if(start < 0) return {};
+  let end = A.findIndex((r,i) => i>start && /^(total|transfers out)$/i.test(lab(i))); if(end < 0) end = Math.min(A.length, start + 40);
+  const rows = {}; for(let r=start+1; r<end; r++){ const hit = PAY_ROWS.find(([re]) => re.test(lab(r))); if(hit && !(hit[1] in rows)) rows[hit[1]] = r; }
+  if(!('basic' in rows)) return {};
+  const now = new Date(), cap = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`, out = {};
+  H.cols.forEach(h => { if(h.key > cap) return; const v = {};
+    PAY_LINES.forEach(l => { const x = l.k in rows ? (A[rows[l.k]]||[])[h.c] : null; v[l.k] = typeof x === 'number' && isFinite(x) ? Math.round(Math.abs(x)*100)/100 : 0; });
+    if(v.basic > 0) out[h.key] = v; });
+  return out;
+}
+function importPayslips(A){   // sheet months fill gaps and replace earlier sheet imports, never a confirmed month
+  const got = parsePayslipRows(A), today = new Date().toISOString().slice(0,10); let n = 0;
+  Object.entries(got).forEach(([m, v]) => { if(PAYSLIPS[m] && PAYSLIPS[m].src !== 'sheet') return; PAYSLIPS[m] = {v, src:'sheet', at:today}; n++; });
+  if(n) savePayslips(); return n;
 }
 function parseFullSummary(A){
   const H = fsHeader(A); if(!H) return null;
