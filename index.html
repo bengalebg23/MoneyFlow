@@ -36,6 +36,12 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.13.0 — Filter. A "Filter" bar on the flow views opens a sheet listing every spending
+           category (and its items) for the account; untick what you don't want to see.
+           Applied centrally in applySrc (filterData), so the Sankey, stats, breakdown
+           table, Compare all years and every category comparison all follow it. Hidden
+           spend becomes a grey "Filtered out" block so Left over and Net stay true; tap
+           it to edit the filter. Saved per account in prefs.flt (joint / nw).
   v1.12.3 — New "Internet" category on the joint account: Plusnet, Now TV and Vodafone are
            moved out of Bills & subs (or wherever they sit) by regroupJoint, applied to
            the built-in figures, the saved import and every new import. Their one-off
@@ -126,7 +132,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.12.3</title>
+<title>Money Flow v1.13.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -355,6 +361,16 @@
   #assetsView .m-split{opacity:.4; height:5px;} #assetsView .as-sec:last-of-type .as-head .mono, #assetsView .as-debts .as-head .mono{color:var(--paper-dim);}
   .as-gone summary{font-size:12px; color:var(--paper-dim); padding:6px 0; cursor:pointer;} .spark{display:block;}
   .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--paper); color:#fff; padding:9px 14px; border-radius:10px; font-size:13px; z-index:40; max-width:90vw;}
+  .flt-bar{display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap; margin:0 0 10px;}
+  .flt-btn{display:inline-flex; align-items:center; gap:6px;} .flt-btn.on{border-color:var(--c-home); color:var(--c-home); background:rgba(42,120,214,.07);}
+  .flt-names{font-size:12px; color:var(--paper-dim); flex:1 1 140px; min-width:0;}
+  .flt-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+  .flt-cat{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; border-bottom:1px solid var(--line); padding:4px 2px;}
+  .flt-cat > label{display:flex; align-items:center; gap:9px; padding:7px 0; font-size:14px; cursor:pointer; min-width:0;}
+  .flt-cat label i{width:10px; height:10px; border-radius:2px; flex:none;} .flt-cat em{font-style:normal; font-size:11px; color:var(--c-home); margin-left:4px;}
+  .flt-cat input, .flt-items input{width:18px; height:18px; accent-color:var(--c-home); flex:none; margin:0;}
+  .flt-items{grid-column:1/-1; list-style:none; margin:0 0 6px 27px; padding:0; display:grid; gap:2px;}
+  .flt-items label{display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; color:var(--paper-dim); cursor:pointer;}
   .pay-view{display:grid; gap:14px; margin:12px 14px 0;}
   .pay-req{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 14px 0; padding:10px 12px; border:1px solid var(--c-home); background:rgba(42,120,214,.07); border-radius:10px; font-size:13px;}
   .pay-req p{margin:0; flex:1 1 180px;} .pay-req b{font-weight:700;} .pay-req .btns{flex:none;}
@@ -405,6 +421,7 @@
   <div id="assetsView" hidden></div>
   <div id="payView" class="pay-view" hidden></div>
   <div id="flowView">
+  <div class="flt-bar" id="fltBar"></div>
   <div class="stats" id="stats"></div>
   <div class="card">
     <div class="chart-box" id="chartBox">
@@ -436,7 +453,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.12.3';
+const APP_VERSION = '1.13.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -570,7 +587,26 @@ try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }ca
 const isNW = () => prefs.src === 'nw';
 const isStm = () => isNW() && prefs.nwView === 'stmts';
 const isFlow = () => prefs.src === 'joint' || prefs.src === 'nw';
-const applySrc = () => { DATA = isNW() ? (isStm() ? NW_DATA : NWY_DATA) : JOINT; };
+const srcData = () => isNW() ? (isStm() ? NW_DATA : NWY_DATA) : JOINT;
+const applySrc = () => { DATA = filterData(srcData()); };
+// ── Filter: spending categories / items Ben has chosen to hide, per account ──
+const fltKey = () => isNW() ? 'nw' : 'joint';
+const fltGet = () => { prefs.flt = prefs.flt || {}; const f = prefs.flt[fltKey()] = prefs.flt[fltKey()] || {}; f.c = f.c || {}; f.i = f.i || {}; return f; };
+const fltCount = () => { const f = (prefs.flt || {})[fltKey()]; return f ? Object.keys(f.c || {}).length + Object.keys(f.i || {}).length : 0; };
+function filterData(src){
+  if(!fltCount()) return src;
+  const f = fltGet(), years = {};
+  for(const [y, D] of Object.entries(src.years)){
+    const out = {}; let hid = 0;
+    for(const [c, v] of Object.entries(D.out || {})){
+      if(f.c[c]){ hid += total(v); continue; }
+      if(v && typeof v === 'object'){ const o = {}; for(const [i, x] of Object.entries(v)){ if(f.i[c+'›'+i]) hid += x; else o[i] = x; } if(Object.keys(o).length) out[c] = o; }
+      else out[c] = v;
+    }
+    years[y] = Object.assign({}, D, {out, hidden: hid});
+  }
+  return Object.assign({}, src, {years});
+}
 const lab = y => (DATA.labels && DATA.labels[y]) || y;
 let cmpSel = null;   // statements chosen for comparison (null = all)
 const cmpKeys = () => { const k = yearKeys(); return isStm() && cmpSel ? (k.filter(x=>cmpSel.has(x)).length ? k.filter(x=>cmpSel.has(x)) : k) : k; };
@@ -832,11 +868,11 @@ function build(d){
   const nodes = [], links = [], idx = {};
   const node = (key, color, col, ref) => { if(!(key in idx)){ idx[key]=nodes.length; nodes.push({key,name:clean(key),color,col,ref}); } return idx[key]; };
   const inTot = Object.values(d.income).reduce((a,b)=>a+b,0);
-  const outTot = Object.values(d.out).reduce((a,v)=>a+total(v),0);
+  const outTot = Object.values(d.out).reduce((a,v)=>a+total(v),0), hidden = d.hidden > 0 ? d.hidden : 0, outAll = outTot + hidden;
   const hub = node("Household pot", css("--paper-dim"), 1, {t:'hub'});
   const inColor = k => /top-ups/.test(k) ? css("--c-top") : css("--c-in");
   for (const [k,v] of Object.entries(d.income).sort((a,b)=>b[1]-a[1])) links.push({source:node(k,inColor(k),0,{t:'in',name:k}),target:hub,value:v,color:inColor(k)});
-  if (outTot > inTot) links.push({source:node("Drawn from balance",css("--c-gap"),0,{t:'gap'}),target:hub,value:outTot-inTot,color:css("--c-gap")});
+  if (outAll > inTot) links.push({source:node("Drawn from balance",css("--c-gap"),0,{t:'gap'}),target:hub,value:outAll-inTot,color:css("--c-gap")});
   for (const [cat,v] of Object.entries(d.out).sort((a,b)=>total(b[1])-total(a[1]))){
     if (total(v) <= 0) continue;
     const c = famColor(CATS[cat] || 'home'), ci = node(cat, c, 2, {t:'cat',cat});
@@ -851,8 +887,9 @@ function build(d){
       if (other > 0) links.push({source:ci,target:node(cat+"›Other",c,3,{t:'other',cat}),value:other,color:c});
     }
   }
-  if (inTot > outTot) links.push({source:hub,target:node("Left over",css("--c-left"),2,{t:'left'}),value:inTot-outTot,color:css("--c-left")});
-  return {nodes,links,inTot,outTot};
+  if (hidden > 0) links.push({source:hub,target:node("Filtered out",css("--line"),2,{t:'hidden'}),value:hidden,color:css("--line")});
+  if (inTot > outAll) links.push({source:hub,target:node("Left over",css("--c-left"),2,{t:'left'}),value:inTot-outAll,color:css("--c-left")});
+  return {nodes,links,inTot,outTot,hidden};
 }
 function clean(n){ return n.includes("›") ? n.split("›")[1] : n; }
 
@@ -957,7 +994,7 @@ document.getElementById('zReset').onclick = () => { if(chart) chart.svg.transiti
 // ── year comparison: the same chart, one panel per year, all drawn to one scale ──
 function valueIn(ref, d){
   if(!d) return null;
-  const inT = Object.values(d.income).reduce((a,b)=>a+b,0), outT = Object.values(d.out).reduce((a,v)=>a+total(v),0);
+  const inT = Object.values(d.income).reduce((a,b)=>a+b,0), outT = Object.values(d.out).reduce((a,v)=>a+total(v),0) + (d.hidden > 0 ? d.hidden : 0);
   switch(ref.t){
     case 'in':   return d.income[ref.name] ?? null;
     case 'gap':  return Math.max(0, outT - inT);
@@ -1074,6 +1111,7 @@ function openStatements(name, back){
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
 }
 function openCompare(n, year, fromYears){
+  if(n.ref && n.ref.t === 'hidden') return openFilter();
   let ref = n.ref || {}, hl = null, only = null;
   if(ref.t==='item'){ hl = ref.item; if(!n.showAll) only = ref.item; ref = {t:'cat', cat:ref.cat}; }
   else if(ref.t==='other'){ ref = {t:'cat', cat:ref.cat}; }
@@ -1175,6 +1213,7 @@ function openCompare(n, year, fromYears){
   if(stKey && stmtRows(stKey).length){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Bank statement breakdown of ${stKey} ›`;
     b.onclick = () => openStatements(stKey, () => openCompare(n, year, fromYears)); subEl.append(' · ', b); }
   if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year, yearsPin); subEl.prepend(b, ' · '); }
+  fltLink(subEl, () => openCompare(n, year, fromYears));
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
   rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(!el) return;
@@ -1364,6 +1403,48 @@ function openPayslip(m, back){
   };
   const del = document.getElementById('psDel'); if(del) del.onclick = () => { if(!confirm(`Remove the ${mLabel(m)} payslip?`)) return; delete PAYSLIPS[m]; savePayslips(); setTimeout(() => { render(); if(back) back(); else closeCompare(); }, 0); };
 }
+
+function fltLink(subEl, back){   // "Filter ›" link on the comparison screens
+  const b = document.createElement('button'); b.className = 'linkbtn'; const n = fltCount();
+  b.textContent = n ? `Filtered: ${n} hidden ›` : 'Filter ›'; b.onclick = () => openFilter(back); subEl.append(' · ', b);
+}
+function renderFltBar(){
+  const el = document.getElementById('fltBar'), n = fltCount(); if(!el) return;
+  const f = (prefs.flt || {})[fltKey()] || {}, names = [...Object.keys(f.c || {}), ...Object.keys(f.i || {}).map(k => k.split('›')[1])];
+  el.innerHTML = `<button class="btn flt-btn${n ? ' on' : ''}" id="fltOpen"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filter${n ? ` · ${n} hidden` : ''}</button>
+    ${n ? `<span class="flt-names">Not showing ${names.slice(0,4).map(x => x.replace(/&/g,'&amp;').replace(/</g,'&lt;')).join(', ')}${names.length > 4 ? ` +${names.length-4} more` : ''}</span><button class="linkbtn" id="fltClear">Show everything</button>` : ''}`;
+  document.getElementById('fltOpen').onclick = () => openFilter();
+  const c = document.getElementById('fltClear'); if(c) c.onclick = () => { const f = fltGet(); f.c = {}; f.i = {}; savePrefs(); setTimeout(render, 0); };
+}
+function openFilter(back){
+  const src = srcData(), esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const cats = {};   // cat → {sum over all years, items: {item → sum}}
+  for(const D of Object.values(src.years)){ if(D.agg) continue; for(const [c, v] of Object.entries(D.out || {})){ const o = cats[c] = cats[c] || {all:0, items:{}};
+    o.all += total(v); if(v && typeof v === 'object') for(const [i, x] of Object.entries(v)) o.items[i] = (o.items[i] || 0) + x; } }
+  const order = Object.keys(cats).filter(c => cats[c].all > 0).sort((a,b) => cats[b].all - cats[a].all);
+  const open = new Set();
+  const draw = () => {
+    const f = fltGet(), body = document.getElementById('cmpBody');
+    body.innerHTML = `<div class="btns"><button class="btn" id="fAll">Show all</button><button class="btn" id="fNone">Hide all</button></div>
+      <p class="note" style="margin:0 2px">Untick what you don’t want to see. Charts, totals, the table and the year comparisons all follow this. Hidden spend shows as a grey “Filtered out” block, so Left over stays right.</p>
+      <ul class="flt-list">` + order.map(c => { const its = Object.entries(cats[c].items).filter(([,x]) => x > 0).sort((a,b) => b[1]-a[1]), on = !f.c[c], hidItems = its.filter(([i]) => f.i[c+'›'+i]).length;
+        return `<li class="flt-cat"><label><input type="checkbox" data-c="${esc(c)}" ${on ? 'checked' : ''}><i style="background:${famColor(CATS[c]||'home')}"></i><span>${esc(c)}${on && hidItems ? ` <em>${hidItems} of ${its.length} items hidden</em>` : ''}</span></label>
+          ${its.length > 1 && on ? `<button class="chev" data-x="${esc(c)}" aria-expanded="${open.has(c)}" aria-label="Choose items">${open.has(c) ? '▾' : '▸'}</button>` : '<span></span>'}
+          ${its.length > 1 && on && open.has(c) ? `<ul class="flt-items">${its.map(([i]) => `<li><label><input type="checkbox" data-i="${esc(c+'›'+i)}" ${f.i[c+'›'+i] ? '' : 'checked'}><span>${esc(i)}</span></label></li>`).join('')}</ul>` : ''}</li>`; }).join('') + `</ul>`;
+    const after = () => { savePrefs(); const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; setTimeout(render, 0); sub(); };
+    body.querySelectorAll('input[data-c]').forEach(el => el.onchange = () => { if(el.checked) delete f.c[el.dataset.c]; else f.c[el.dataset.c] = 1; after(); });
+    body.querySelectorAll('input[data-i]').forEach(el => el.onchange = () => { if(el.checked) delete f.i[el.dataset.i]; else f.i[el.dataset.i] = 1; after(); });
+    body.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { const c = b.dataset.x; open.has(c) ? open.delete(c) : open.add(c); const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; });
+    document.getElementById('fAll').onclick = () => { f.c = {}; f.i = {}; after(); };
+    document.getElementById('fNone').onclick = () => { f.c = {}; f.i = {}; order.forEach(c => f.c[c] = 1); after(); };
+  };
+  const sub = () => { const el = document.getElementById('cmpSub'), n = fltCount(); el.textContent = n ? `${n} hidden on ${isNW() ? 'your NatWest' : 'the joint account'}` : `Showing everything on ${isNW() ? 'your NatWest' : 'the joint account'}`;
+    if(back){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← Back'; b.onclick = () => back(); el.prepend(b, ' · '); } };
+  document.querySelector('#cmp .eyebrow').textContent = 'Filter';
+  document.getElementById('cmpTitle').textContent = 'What to show';
+  sub(); draw();
+  const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
+}
 let yearsMode = 'out', yearsPin = null, yearsNoOne = false;
 const compact = v => v >= 9500 ? '£' + Math.round(v/1000) + 'k' : v >= 1000 ? '£' + (v/1000).toFixed(1) + 'k' : '£' + Math.round(v);
 function openYears(mode, year, pin){
@@ -1403,6 +1484,7 @@ function openYears(mode, year, pin){
     const ed = document.createElement('button'); ed.className = 'linkbtn'; ed.textContent = 'Choose one-offs ›'; ed.onclick = () => openOneOffs(year, () => openYears(mode, year, pin)); subEl.append(' · ', ed);
     if(yearsNoOne) document.querySelector('#cmp .eyebrow').textContent += ' · regular spending only'; }
   if(pin){ const un = document.createElement('button'); un.className = 'linkbtn'; un.textContent = 'Unpin'; un.onclick = () => openYears(mode, year, null); subEl.append(' · ', un); }
+  fltLink(subEl, () => openYears(mode, year, pin));
 
   const body = document.getElementById('cmpBody');
   body.innerHTML = `<div class="ys-wrap"><svg class="ys-svg" id="ysSvg"></svg>
@@ -1912,10 +1994,10 @@ function render(){
   }).join('');
   document.querySelectorAll('.yr-tab').forEach(b=>b.onclick=()=>{ prefs.year=b.dataset.y; savePrefs(); setTimeout(render,0); });
 
-  const g = build(d), net = g.inTot - g.outTot, mort = total(d.out.Mortgage || 0);
+  const g = build(d), net = g.inTot - g.outTot - g.hidden, mort = total(d.out.Mortgage || 0);
   document.getElementById("stats").innerHTML = `
     <div class="stat"><span class="k">Money in</span><span class="v">${gbp(g.inTot)}</span><span class="s">${DATA.subs ? DATA.subs[year] : yearLabel(year,d.months)}</span></div>
-    <div class="stat"><span class="k">Money out</span><span class="v">${gbp(g.outTot)}</span><span class="s">${isNW() ? Math.round(total(d.out['Paid into joint account']||0)/g.outTot*100)+'% paid into the joint account' : Math.round(mort/g.outTot*100)+'% on the mortgage'}</span></div>
+    <div class="stat"><span class="k">Money out</span><span class="v">${gbp(g.outTot)}</span><span class="s">${g.hidden > 0 ? `shown · ${gbp(g.hidden)} filtered out` : isNW() ? Math.round(total(d.out['Paid into joint account']||0)/g.outTot*100)+'% paid into the joint account' : Math.round(mort/g.outTot*100)+'% on the mortgage'}</span></div>
     <div class="stat"><span class="k">Net</span><span class="v ${net<0?'neg':'pos'}">${net<0?'−':'+'}${gbp(Math.abs(net))}</span><span class="s">${net<0?'Spent more than came in':'Left in the account'}</span></div>`;
   let nt = d.note || '';
   if(!isStm() && isNW() && !nt){ const pm = y => total(DATA.years[y].income)/Math.max(DATA.years[y].months,1), others = Object.keys(DATA.years).filter(y=>y!==year).map(pm).sort((a,b)=>a-b);
@@ -1923,6 +2005,7 @@ function render(){
   if(d.fromStatements) nt = d.note;
   document.getElementById("note").textContent = nt;
   renderChecks(year);
+  renderFltBar();
   drawChart(d, year);
 
   const fams = [...new Set(Object.keys(d.out).map(k=>CATS[k]||'home'))];
