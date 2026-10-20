@@ -36,6 +36,9 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.12.1 — "Other" in a year-by-year category view is broken down: the items folded into
+           it are listed under it in each year (biggest first), and in a category view
+           each one can be tapped to pin it like any named item.
   v1.12.0 — Payslips import from the sheet. Loading the workbook reads the Full Summary
            "Salary" block (parsePayslipRows: Monthly Salary, Holiday Buy, Pension, Car,
            Bonuses, BIK, student loan, SSC500, NI, Tax; between the Salary row and the
@@ -116,7 +119,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.12.0</title>
+<title>Money Flow v1.12.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -253,6 +256,7 @@
   .c-list li.hl .nm, .c-list li.hl .am{font-weight:700; color:var(--paper);}
   .c-list .ch{font-family:'Inter',sans-serif; font-size:8.5px; font-weight:700; margin-left:2px; white-space:nowrap;}
   .c-list .ch.bad{color:var(--c-gap);} .c-list .ch.good{color:var(--today);} .c-list .ch.new, .c-list .ch.flat{color:var(--muted); font-weight:600;}
+  .c-list li.sub{padding-left:10px;} .c-list li.sub i{background:none; border:1px solid var(--c-in); width:6px; height:6px;} .c-list li.sub .nm{color:var(--paper-dim); white-space:normal; overflow-wrap:anywhere;}
   .c-list li.none{display:block; color:var(--muted); font-size:10.5px;}
   .scrim{position:fixed; inset:0; background:rgba(38,49,63,.35); z-index:50;}
   .sheet{position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:min(560px,100%); max-height:82vh; overflow:auto; background:var(--surface); border-radius:18px 18px 0 0; padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px)); z-index:51; box-shadow:0 -8px 30px rgba(38,49,63,.18); display:grid; gap:12px;}
@@ -425,7 +429,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.12.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1085,7 +1089,7 @@ function openCompare(n, year, fromYears){
   const order = [...named, 'Other'];
   rows.forEach(r => {
     const keep = r.parts.filter(p => named.includes(p.k)), rest = r.parts.filter(p => !named.includes(p.k));
-    if(rest.length) keep.push({k:'Other', v:rest.reduce((s,p)=>s+p.v,0), a:rest.reduce((s,p)=>s+p.a,0), pro:rest.some(p=>p.pro), n:rest.length});
+    if(rest.length) keep.push({k:'Other', v:rest.reduce((s,p)=>s+p.v,0), a:rest.reduce((s,p)=>s+p.a,0), pro:rest.some(p=>p.pro), n:rest.length, items:rest.slice().sort((a,b)=>b.a-a.a)});
     r.parts = keep.sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
   });
 
@@ -1102,7 +1106,7 @@ function openCompare(n, year, fromYears){
   rows.forEach((r, ri) => {
     const me = r.y===year, part = r.D.months < 12, ap = r.pro ? '≈' : '';
     // small ▲/▼ % per item against the year before (same pro-rating as the amounts)
-    const prev = ri > 0 ? new Map(rows[ri-1].parts.map(p=>[p.k, p.a])) : null;
+    const prev = ri > 0 ? new Map(rows[ri-1].parts.flatMap(p => p.items ? [p, ...p.items] : [p]).map(p=>[p.k, p.a])) : null;
     const chg = p => {
       if(!prev || p.k==='Other' || !rows[ri-1].focus) return '';
       const b = prev.get(p.k);
@@ -1128,7 +1132,7 @@ function openCompare(n, year, fromYears){
         <span class="c-delta">${delta || '&nbsp;'}</span></div>
       <div class="c-body">
       ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${lab(r.y)}</div>`}
-      <ul class="c-list">${r.parts.map(p => `<li data-k="${p.k.replace(/"/g,'&quot;')}" class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>`).join('')
+      <ul class="c-list">${r.parts.map(p => `<li data-k="${p.k.replace(/"/g,'&quot;')}" class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>` + (p.items ? p.items.map(q => `<li class="sub${canPick ? ' pick' : ''}"${canPick ? ` data-item="${q.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i></i><span class="nm">${q.k}</span><span class="am mono">${q.pro?'≈':''}${gbp(q.a)} ${chg(q)}</span></li>`).join('') : '')).join('')
         || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
       </div>
     </section>`;
@@ -1149,7 +1153,7 @@ function openCompare(n, year, fromYears){
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
   rows.forEach(r => { const el = body.querySelector(`svg[data-y="${r.y}"]`); if(!el) return;
     const done = drawPanel(el, r, {s, GAP, TOP, focusColor, color, hl, side: ref.t==='hub' ? 'left' : 'right', onItem: canPick ? pickItem : null});
-    el.closest('.c-body').querySelectorAll('.c-list li[data-k]').forEach(li => { if(done.has(li.dataset.k)) li.hidden = true; }); });
+    el.closest('.c-body').querySelectorAll('.c-list li[data-k]').forEach(li => { if(done.has(li.dataset.k) && li.dataset.k !== 'Other') li.hidden = true; }); });
   if(canPick) body.querySelectorAll('.c-list li[data-item]').forEach(li => {
     li.onclick = () => pickItem(li.dataset.item);
     li.onkeydown = ev => { if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); pickItem(li.dataset.item); } };
