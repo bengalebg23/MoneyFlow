@@ -36,6 +36,9 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.13.1 — 2022 fixes on the joint account (MOVE_ITEMS, applied by regroupJoint): Home Ins
+           moves from Bills & subs to Annual payments as "Home insurance" (matching later
+           years); Sofa moves from Bills & subs to Home projects (the sheet's House block).
   v1.13.0 — Filter. A "Filter" bar on the flow views opens a sheet listing every spending
            category (and its items) for the account; untick what you don't want to see.
            Applied centrally in applySrc (filterData), so the Sankey, stats, breakdown
@@ -132,7 +135,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.13.0</title>
+<title>Money Flow v1.13.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -453,7 +456,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.13.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -567,8 +570,19 @@ const MIRA_CLAIMS = [
 })();
 // Items that get their own category on the joint account, whichever sheet section they sit in.
 const REGROUP = [['Internet', /plusnet|now\s*tv|vodafone/i]];
+// One-off corrections for a single year: [year, from category, item, to category, new item name].
+const MOVE_ITEMS = [
+  ['2022', 'Bills & subs', /^home ins/i, 'Annual payments', 'Home insurance'],
+  ['2022', 'Bills & subs', /^sofa$/i, 'Home projects', 'Sofa']
+];
 const REGROUP_MOVED = {};   // 'Old cat›Item' → 'New cat›Item', for carrying over one-off choices
 function regroupJoint(years){
+  for(const [y, from, re, toCat, as] of MOVE_ITEMS){ const D = years && years[y], its = D && D.out && D.out[from]; if(!its || typeof its !== 'object') continue;
+    for(const i of Object.keys(its)){ if(!re.test(i)) continue;
+      const to = (D.out[toCat] = D.out[toCat] && typeof D.out[toCat] === 'object' ? D.out[toCat] : (typeof D.out[toCat] === 'number' ? {[toCat]: D.out[toCat]} : {}));
+      to[as] = (to[as] || 0) + its[i]; delete its[i];
+      if(D.lumpy && D.lumpy[from+'›'+i] != null){ D.lumpy[toCat+'›'+as] = D.lumpy[from+'›'+i]; delete D.lumpy[from+'›'+i]; } }
+    if(!Object.keys(its).length) delete D.out[from]; }
   for(const D of Object.values(years || {})){ if(!D || !D.out) continue;
     for(const [cat, re] of REGROUP) for(const c of Object.keys(D.out)){ const its = D.out[c]; if(c === cat || !its || typeof its !== 'object') continue;
       for(const i of Object.keys(its)){ if(!re.test(i)) continue;
