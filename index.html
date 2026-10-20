@@ -36,6 +36,10 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.12.3 — New "Internet" category on the joint account: Plusnet, Now TV and Vodafone are
+           moved out of Bills & subs (or wherever they sit) by regroupJoint, applied to
+           the built-in figures, the saved import and every new import. Their one-off
+           flags and Regular/One-off choices move with them.
   v1.12.2 — Category year-by-year views no longer fold small items into "Other": every
            item is drawn as its own block (the 7 biggest keep their colours, the rest
            get alternating greys) and can be tapped to pin. Other views still fold.
@@ -122,7 +126,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.12.2</title>
+<title>Money Flow v1.12.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -432,13 +436,13 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.12.2';
+const APP_VERSION = '1.12.3';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
 
 const CATS = { // category → colour family, in display order of the legend
-  "Mortgage":"home","Mortgage overpayment":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Home projects":"home",
+  "Mortgage":"home","Mortgage overpayment":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Internet":"home","Home projects":"home",
   "Food shop":"food","Everyday spending":"spend","Nursery":"kids","Kids' savings":"kids","Household savings":"home",
   "Holidays":"trips","Parties & weddings":"trips","Annual payments":"annual",
   // Ben's NatWest account
@@ -544,9 +548,23 @@ const MIRA_CLAIMS = [
   NW_TXNS.forEach(t => { if(t[4]==='Other pay (MIRA)') t[4] = 'Unanswered income'; });
   for(const D of Object.values(NW_DATA.years)) if(D.income['Other pay (MIRA)'] != null){ D.income['Unanswered income'] = (D.income['Unanswered income']||0) + D.income['Other pay (MIRA)']; delete D.income['Other pay (MIRA)']; }
 })();
+// Items that get their own category on the joint account, whichever sheet section they sit in.
+const REGROUP = [['Internet', /plusnet|now\s*tv|vodafone/i]];
+const REGROUP_MOVED = {};   // 'Old cat›Item' → 'New cat›Item', for carrying over one-off choices
+function regroupJoint(years){
+  for(const D of Object.values(years || {})){ if(!D || !D.out) continue;
+    for(const [cat, re] of REGROUP) for(const c of Object.keys(D.out)){ const its = D.out[c]; if(c === cat || !its || typeof its !== 'object') continue;
+      for(const i of Object.keys(its)){ if(!re.test(i)) continue;
+        const to = (D.out[cat] = D.out[cat] && typeof D.out[cat] === 'object' ? D.out[cat] : {});
+        to[i] = (to[i] || 0) + its[i]; delete its[i]; REGROUP_MOVED[c+'›'+i] = cat+'›'+i;
+        if(D.lumpy && D.lumpy[c+'›'+i] != null){ D.lumpy[cat+'›'+i] = D.lumpy[c+'›'+i]; delete D.lumpy[c+'›'+i]; } }
+      if(!Object.keys(its).length) delete D.out[c]; } }
+  return years;
+}
+regroupJoint(BUILTIN_DATA.years);
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
-try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.years){ JOINT = DATA = s; usingImport = true; } }catch(e){}
+try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.years){ regroupJoint(s.years); JOINT = DATA = s; usingImport = true; } }catch(e){}
 let prefs = {year:null, src:'joint', detail:window.innerWidth >= 700, nwView:'years', kids:false, asof:'latest'};
 try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }catch(e){}
 const isNW = () => prefs.src === 'nw';
@@ -785,7 +803,7 @@ document.getElementById('fileIn').onchange = async ev => {
     const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
     const ws = wb.Sheets['Santander'];
     if(!ws) throw new Error('This workbook has no “Santander” sheet.');
-    const years = parseSantander(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}));
+    const years = regroupJoint(parseSantander(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null})));
     JOINT = {source:`Imported from “${f.name}” on ${new Date().toLocaleDateString('en-GB')}`, years}; prefs.src = 'joint'; applySrc();
     usingImport = true;
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(JOINT)); }catch(e){}
@@ -964,6 +982,9 @@ const ONE_OFF_ITEMS = new Set(['Christmas','Birthdays & anniv.',"Ben's phone",'E
 // Keyed by account + category › item, so one choice covers every year.
 const OVR_KEY = 'moneyflow.oneoff.v1';
 let ONEOFF_SET = {}; try{ ONEOFF_SET = JSON.parse(localStorage.getItem(OVR_KEY)) || {}; }catch(e){}
+(() => { let moved = false;   // Regular/One-off choices follow items that moved category (regroupJoint)
+  for(const [from, to] of Object.entries(REGROUP_MOVED)){ const k = 'joint|' + from; if(k in ONEOFF_SET){ ONEOFF_SET['joint|' + to] = ONEOFF_SET[k]; delete ONEOFF_SET[k]; moved = true; } }
+  if(moved) try{ localStorage.setItem(OVR_KEY, JSON.stringify(ONEOFF_SET)); }catch(e){} })();
 const ovrKey = (cat, item) => (isNW() ? 'nw' : 'joint') + '|' + cat + '›' + (item || '');
 const autoOneOff = (D, cat, item) => ONE_OFF_CATS.has(cat) || !!(item && ONE_OFF_ITEMS.has(item)) || !!(D.lumpy && D.lumpy[cat+'›'+(item||'')]);
 function isOneOff(D, cat, item){
