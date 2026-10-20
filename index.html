@@ -36,6 +36,9 @@
   - Nothing is synced; localStorage only. No Firebase needed.
 
   CHANGELOG
+  v1.11.1 — Payslips get their own pill in the top tabs (prefs.src 'pay', #payView,
+           renderPayslips); the Payslips button is gone. Month forms open over it
+           and close back to it.
   v1.11.0 — Payslip check (openPayslips). Each month the app asks Ben to confirm his
            payslip lines (the Full Summary "Salary" block: monthly salary, bonuses,
            holiday buy, pension, car, BIK, tax, NI, student loan, SSC500), pre-filled
@@ -105,7 +108,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.11.0</title>
+<title>Money Flow v1.11.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -333,6 +336,7 @@
   #assetsView .m-split{opacity:.4; height:5px;} #assetsView .as-sec:last-of-type .as-head .mono, #assetsView .as-debts .as-head .mono{color:var(--paper-dim);}
   .as-gone summary{font-size:12px; color:var(--paper-dim); padding:6px 0; cursor:pointer;} .spark{display:block;}
   .toast{position:fixed; left:50%; bottom:calc(18px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); background:var(--paper); color:#fff; padding:9px 14px; border-radius:10px; font-size:13px; z-index:40; max-width:90vw;}
+  .pay-view{display:grid; gap:14px; margin:12px 14px 0;}
   .pay-req{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 14px 0; padding:10px 12px; border:1px solid var(--c-home); background:rgba(42,120,214,.07); border-radius:10px; font-size:13px;}
   .pay-req p{margin:0; flex:1 1 180px;} .pay-req b{font-weight:700;} .pay-req .btns{flex:none;}
   .ps-sum{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;} .ps-sum>div{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:2px; min-width:0;}
@@ -372,7 +376,6 @@
     <div class="btns">
       <button class="btn" id="yearsBtn">Compare all years</button>
       <button class="btn" id="oneOffBtn">One-offs</button>
-      <button class="btn" id="payBtn" hidden>Payslips</button>
       <button class="btn primary" id="loadBtn">Load spreadsheet</button>
       <button class="btn" id="resetBtn" hidden>Use built-in figures</button>
       <input type="file" id="fileIn" accept=".xlsx,.xlsm,.xls" hidden>
@@ -381,6 +384,7 @@
 
   <div id="worthView" hidden></div>
   <div id="assetsView" hidden></div>
+  <div id="payView" class="pay-view" hidden></div>
   <div id="flowView">
   <div class="stats" id="stats"></div>
   <div class="card">
@@ -413,7 +417,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.11.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -1242,7 +1246,7 @@ function renderPayReq(){
   el.hidden = false;
   el.innerHTML = `<p><b>Payslip check · ${mLabel(m)}</b><br>Confirm this month’s payslip lines so your pay can be broken down.</p>
     <div class="btns"><button class="btn primary" id="payGo">Check now</button><button class="btn" id="payLater">Later</button></div>`;
-  document.getElementById('payGo').onclick = () => openPayslip(m, () => openPayslips());
+  document.getElementById('payGo').onclick = () => openPayslip(m, openPayslips);
   document.getElementById('payLater').onclick = () => { payLater = true; renderPayReq(); };
 }
 const PAY_SEGS = [['Take-home', '--c-left', c => c.net], ['Tax', '--c-gap', (c,v) => +v.tax||0], ['NI', '--c-food', (c,v) => +v.ni||0],
@@ -1263,9 +1267,12 @@ function payOpenShell(eyebrow, title, sub){
   const cmp = document.getElementById('cmp'); cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
   return document.getElementById('cmpBody');
 }
-function openPayslips(){
+function openPayslips(){   // go to the Payslips pill (also the "back" from a month's form)
+  closeCompare(); prefs.src = 'pay'; savePrefs(); setTimeout(render, 0);
+}
+function renderPayslips(){
   const ms = payMonths(), done = ms.filter(m => PAYSLIPS[m]), yrs = [...new Set(done.map(m => m.slice(0,4)))].sort();
-  const body = payOpenShell('Ben’s pay', 'Payslips', 'Confirm each month’s lines; net pay is checked against what landed in NatWest.');
+  const body = document.getElementById('payView');
   const yr = yrs[yrs.length-1], inY = done.filter(m => m.slice(0,4) === yr);
   const tot = k => inY.reduce((s, m) => s + (k === 'net' ? payCalc(PAYSLIPS[m].v).net : k === 'pay' ? payCalc(PAYSLIPS[m].v).pay : (+PAYSLIPS[m].v[k] || 0)), 0);
   const sum = inY.length ? `<p class="note" style="margin:0 2px">${yr} · ${inY.length} checked month${inY.length>1?'s':''}</p><div class="ps-sum">
@@ -1412,7 +1419,6 @@ function openYears(mode, year, pin){
 }
 document.getElementById('yearsBtn').onclick = () => openYears('out', prefs.year);
 document.getElementById('oneOffBtn').onclick = () => openOneOffs(prefs.year);
-document.getElementById('payBtn').onclick = () => openPayslips();
 function drawPanel(el, r, o){
   const W = el.clientWidth || el.parentNode.clientWidth, nw = 8;
   const svg = d3.select(el).attr('width', W).attr('viewBox', `0 0 ${W} ${el.getAttribute('height')}`);
@@ -1810,22 +1816,24 @@ function render(){
   applySrc();
   const flow = isFlow();
   renderPayReq();
-  document.getElementById('payBtn').hidden = !isNW();
+  document.getElementById('payView').hidden = prefs.src !== 'pay';
+  document.querySelector('main > .bar').hidden = prefs.src === 'pay';
+  document.getElementById('oneOffBtn').hidden = !flow;
   document.getElementById('flowView').hidden = !flow;
   document.getElementById('worthView').hidden = prefs.src !== 'worth';
   document.getElementById('assetsView').hidden = prefs.src !== 'assets';
   document.getElementById('yearsBtn').hidden = !flow;
   document.getElementById('zoomHint').hidden = !flow;
   document.getElementById('yearTabs').hidden = !flow;
-  const tabs = [['joint','Joint account'],['nw','Ben’s cash flow'],['worth','Net worth'],['assets','Assets']];
+  const tabs = [['joint','Joint account'],['nw','Ben’s cash flow'],['pay','Payslips'],['worth','Net worth'],['assets','Assets']];
   document.getElementById('srcTabs').innerHTML = tabs.map(([k,t])=>`<button class="src-tab${prefs.src===k?' active':''}" data-s="${k}">${t}</button>`).join('');
   document.querySelectorAll('.src-tab').forEach(b=>b.onclick=()=>{ if(prefs.src===b.dataset.s) return; prefs.src=b.dataset.s; if(prefs.year==='ALL') prefs.year=null; savePrefs(); setTimeout(render,0); });
   const vt = document.getElementById('viewTabs'); vt.hidden = !isNW();
   vt.innerHTML = isNW() ? [['years','By year'],['stmts','By statement']].map(([k,t])=>`<button class="sub-tab${prefs.nwView===k?' active':''}" data-v="${k}">${t}</button>`).join('') : '';
   vt.querySelectorAll('.sub-tab').forEach(b=>b.onclick=()=>{ prefs.nwView=b.dataset.v; prefs.year=null; savePrefs(); setTimeout(render,0); });
-  document.querySelector('.top .eyebrow').textContent = ({joint:'Joint account · where it all went', nw:'Ben’s NatWest · personal account', worth:'Net worth · cash, savings and investments', assets:'Every account, savings pot and investment'})[prefs.src] || '';
-  document.getElementById('resetBtn').hidden = !(flow && !isNW() && usingImport) && !(usingExtra && !flow);
-  if(!flow){ document.getElementById('legend').innerHTML = ''; if(prefs.src === 'worth') renderWorth(); else renderAssets(); return; }
+  document.querySelector('.top .eyebrow').textContent = ({joint:'Joint account · where it all went', nw:'Ben’s NatWest · personal account', pay:'Ben’s pay · payslips checked against NatWest', worth:'Net worth · cash, savings and investments', assets:'Every account, savings pot and investment'})[prefs.src] || '';
+  document.getElementById('resetBtn').hidden = !(flow && !isNW() && usingImport) && !(usingExtra && !flow && prefs.src !== 'pay');
+  if(!flow){ document.getElementById('legend').innerHTML = ''; if(prefs.src === 'worth') renderWorth(); else if(prefs.src === 'pay') renderPayslips(); else renderAssets(); return; }
   const yrs = Object.keys(DATA.years).sort();
   if(!prefs.year || !DATA.years[prefs.year]) prefs.year = isStm() ? 'ALL' : (yrs.find(y=>DATA.years[y].months>=12 && y===String(new Date().getFullYear()-1)) || yrs[yrs.length-1]);
   document.getElementById('yearsBtn').textContent = isStm() ? 'Compare months' : 'Compare all years';
