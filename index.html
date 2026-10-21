@@ -41,6 +41,9 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.14.1 — SP Deryan (£88 on 29 Apr + £27 on 10 May) is camping: £115 moves out of Misc
+           into Holidays › 2026 Devon Camping (SPLIT_ITEMS, now marked done per year in
+           D.splitDone so a saved import isn't split twice).
   v1.14.0 — Money back. New joint category "Money back" (money the joint account hands back
            to Emily: the "Money back" transfers, Emily's car service/MOT, Emily's glasses),
            built by regroupJoint (REGROUP + SPLIT_ITEMS; Apr 2026 £36 split out of Misc).
@@ -150,7 +153,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.14.0</title>
+<title>Money Flow v1.14.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -473,7 +476,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.14.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -589,12 +592,13 @@ const MIRA_CLAIMS = [
 const REGROUP = [['Internet', /plusnet|now\s*tv|vodafone/i], ['Money back', /^emily('s)?\s+(car|glasses)|^money back/i]];
 // Part of one item moved to another category: [year, from cat, item, amount, to cat, new item]. Skipped once the new item exists.
 const SPLIT_ITEMS = [
-  ['2026', 'Everyday spending', 'Misc', 36, 'Money back', 'Money back to Emily']   // 19 Apr £15 + 27 Apr £21 transfers to Emily
+  ['2026', 'Everyday spending', 'Misc', 36, 'Money back', 'Money back to Emily'],   // 19 Apr £15 + 27 Apr £21 transfers to Emily
+  ['2026', 'Everyday spending', 'Misc', 115, 'Holidays', '2026 Devon Camping']      // SP Deryan 29 Apr £88 + 10 May £26.95, camping kit
 ];
 // Layer 3: an item's own breakdown, from the bank statements. Whatever the item holds beyond these shows as SUB_REST.
 const SUB_REST = 'Not itemised yet';
 const SUB_ITEMS = {'2026': {'Everyday spending›Misc': {
-  'SP Deryan (pending)': 115, 'eBay': 60, 'Argos': 38, 'PayPal Pay in 3': 37, 'Etsy': 37, 'LH Trading': 26, 'Smyths Toys': 26,
+  'eBay': 60, 'Argos': 38, 'PayPal Pay in 3': 37, 'Etsy': 37, 'LH Trading': 26, 'Smyths Toys': 26,
   'Cancer Research UK': 20, 'The Flower Plant': 20, 'Boots': 6 }}};
 const SUB_NOTE = {'Everyday spending›Misc': 'Itemised from the Santander statements, 7 Apr – 5 Jun 2026; send the others to itemise the rest.'};
 // One-off corrections for a single year: [year, from category, item, to category, new item name].
@@ -605,9 +609,12 @@ const MOVE_ITEMS = [
 const REGROUP_MOVED = {};   // 'Old cat›Item' → 'New cat›Item', for carrying over one-off choices
 function regroupJoint(years){
   for(const [y, from, i, amt, toCat, as] of SPLIT_ITEMS){ const D = years && years[y], its = D && D.out && D.out[from];
+    const id = [from, i, amt, toCat, as].join('|'); if(D && D.splitDone && D.splitDone[id]) continue;
     if(!its || typeof its !== 'object' || !(its[i] >= amt)) continue;
-    const to = D.out[toCat] && typeof D.out[toCat] === 'object' ? D.out[toCat] : null; if(to && as in to) continue;
-    (D.out[toCat] = to || {})[as] = amt; its[i] = +(its[i] - amt).toFixed(2); if(!its[i]) delete its[i]; }
+    const to = D.out[toCat] && typeof D.out[toCat] === 'object' ? D.out[toCat] : null;
+    if(to && as in to && !D.splitDone && toCat === 'Money back') continue;   // saved before splitDone existed
+    (D.out[toCat] = to || {})[as] = ((to && to[as]) || 0) + amt; its[i] = +(its[i] - amt).toFixed(2); if(!its[i]) delete its[i];
+    (D.splitDone = D.splitDone || {})[id] = true; }
   for(const [y, from, re, toCat, as] of MOVE_ITEMS){ const D = years && years[y], its = D && D.out && D.out[from]; if(!its || typeof its !== 'object') continue;
     for(const i of Object.keys(its)){ if(!re.test(i)) continue;
       const to = (D.out[toCat] = D.out[toCat] && typeof D.out[toCat] === 'object' ? D.out[toCat] : (typeof D.out[toCat] === 'number' ? {[toCat]: D.out[toCat]} : {}));
