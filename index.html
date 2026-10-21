@@ -41,6 +41,9 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.16.1 — "Loan & extension" pill on the joint account: switches the 2022 Bank of
+           Ireland loan (money in) and the LNS build payments it funded (Home
+           projects › Extension (loan-funded)) on or off together (loanOff, prefs.loan).
   v1.16.0 — Joint account from the Santander statements (Jan 2020 – Oct 2026). The
            workbook's "Joint transactions" tab (one cleaned line per transaction, with
            its sheet Section/Item and how it was placed) is read on "Load spreadsheet"
@@ -500,7 +503,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.16.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -679,6 +682,20 @@ function jointPlace(sec, item){
   for(const [rc, re] of REGROUP) if(re.test(name)) return ['out', rc, name];
   return ['out', cat, name];
 }
+// The 2022 Bank of Ireland loan and the extension it paid for: shown, but can be switched off together.
+const LOAN_BUILD = ['Home projects', 'Extension (loan-funded)'], isLoanIn = k => /^loan\b/i.test(k);
+function loanOff(src){
+  if(isNW() || prefs.loan !== false || !src || !src.years) return src;
+  const years = {};
+  for(const [y, D] of Object.entries(src.years)){
+    const lo = Object.keys(D.income || {}).filter(isLoanIn), hp = D.out && D.out[LOAN_BUILD[0]];
+    if(!lo.length && !(hp && typeof hp === 'object' && hp[LOAN_BUILD[1]])){ years[y] = D; continue; }
+    const income = Object.assign({}, D.income), out = Object.assign({}, D.out); lo.forEach(k => delete income[k]);
+    if(hp && typeof hp === 'object' && hp[LOAN_BUILD[1]]){ const o = Object.assign({}, hp); delete o[LOAN_BUILD[1]]; if(Object.keys(o).length) out[LOAN_BUILD[0]] = o; else delete out[LOAN_BUILD[0]]; }
+    years[y] = Object.assign({}, D, {income, out}); }
+  return Object.assign({}, src, {years});
+}
+const hasLoan = () => !isNW() && Object.values(JOINT.years || {}).some(D => Object.keys(D.income || {}).some(isLoanIn));
 const NUM_CATS = new Set(['Mortgage','Council Tax','Energy','Nursery','Household savings','Mortgage overpayment']);
 function readJointTab(A){
   const h = (A[0]||[]).map(x => String(x||'').trim().toLowerCase()), col = n => h.indexOf(n);
@@ -688,7 +705,8 @@ function readJointTab(A){
   const out = [];
   for(let i = 1; i < A.length; i++){ const r = A[i]; if(!r || r[cD] == null) continue;
     const amt = +(((+r[cI]||0) - (+r[cO]||0)).toFixed(2)); if(!amt) continue;
-    const [k, cat, name] = jointPlace(r[cS], r[cIt]);
+    let [k, cat, name] = jointPlace(r[cS], r[cIt]);
+    if(/^To BEN: LNS\b/.test(String(r[cT]||''))){ cat = LOAN_BUILD[0]; name = LOAN_BUILD[1]; }   // the extension, paid for by the loan
     out.push([iso(r[cD]), amt, String(r[cT]||''), k === 'in' ? 'in' : cat, k === 'in' ? cat : (name || cat), String(r[cH]||'')]); }
   return out.sort((a,b) => a[0].localeCompare(b[0]));
 }
@@ -751,14 +769,17 @@ const jointRows = (cat, item) => (JTX || []).filter(t => t[3] !== 'in' && t[3] =
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
 try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.years){ regroupJoint(s.years); JOINT = DATA = s; usingImport = true; } }catch(e){}
-if(JTX){ try{ jointYears(JTX); }catch(e){} }
+if(JTX){ try{   // rebuild from the saved statement lines, so app updates apply without loading the workbook again
+  JTX.forEach(t => { if(/^To BEN: LNS\b/.test(t[2])){ t[3] = LOAN_BUILD[0]; t[4] = LOAN_BUILD[1]; } });
+  const jy = regroupJoint(jointYears(JTX)); if(usingImport) JOINT = Object.assign({}, JOINT, {years: Object.assign({}, JOINT.years, jy)});
+}catch(e){} }
 let prefs = {year:null, src:'joint', detail:window.innerWidth >= 700, nwView:'years', kids:false, asof:'latest'};
 try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }catch(e){}
 const isNW = () => prefs.src === 'nw';
 const isStm = () => isNW() && prefs.nwView === 'stmts';
 const isFlow = () => prefs.src === 'joint' || prefs.src === 'nw';
 const srcData = () => isNW() ? (isStm() ? NW_DATA : NWY_DATA) : JOINT;
-const applySrc = () => { DATA = filterData(netMoneyBack(srcData())); };
+const applySrc = () => { DATA = filterData(netMoneyBack(loanOff(srcData()))); };
 // Money back comes off the one-off money put in (Emily's first), so Layer 1 shows what was left for joint use.
 // The raw figures stay on each year (rawIncome, moneyBack) for Layer 2 of money in.
 const MB_CAT = 'Money back', MB_FROM = ['Emily (top-ups)','Emily (one-off)','Ben (top-ups)','Ben (one-off)','Other income'];
@@ -1645,6 +1666,12 @@ function renderFltBar(){
   const f = (prefs.flt || {})[fltKey()] || {}, names = [...Object.keys(f.c || {}), ...Object.keys(f.i || {}).map(k => k.split('›')[1])];
   el.innerHTML = `<button class="btn flt-btn${n ? ' on' : ''}" id="fltOpen"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filter${n ? ` · ${n} hidden` : ''}</button>
     ${n ? `<span class="flt-names">Not showing ${names.slice(0,4).map(x => x.replace(/&/g,'&amp;').replace(/</g,'&lt;')).join(', ')}${names.length > 4 ? ` +${names.length-4} more` : ''}</span><button class="linkbtn" id="fltClear">Show everything</button>` : ''}`;
+  if(hasLoan()){ const on = prefs.loan !== false, b = document.createElement('button');
+    b.className = 'btn flt-btn' + (on ? '' : ' on'); b.id = 'loanPill'; b.setAttribute('aria-pressed', String(on));
+    b.textContent = on ? 'Loan & extension: shown' : 'Loan & extension: hidden';
+    b.title = 'The 2022 Bank of Ireland loan and the extension build it paid for';
+    b.onclick = () => { prefs.loan = !on; savePrefs(); applySrc(); setTimeout(render, 0); };
+    el.prepend(b); }
   document.getElementById('fltOpen').onclick = () => openFilter();
   const c = document.getElementById('fltClear'); if(c) c.onclick = () => { const f = fltGet(); f.c = {}; f.i = {}; savePrefs(); setTimeout(render, 0); };
 }
