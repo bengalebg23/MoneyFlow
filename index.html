@@ -35,7 +35,22 @@
         to within 10% (the 2024 food items hold monthly averages).
   - Nothing is synced; localStorage only. No Firebase needed.
 
+  LAYERS (Ben's terms)
+  Layer 1 = the full-year overview (Sankey, stats, table, Compare all years).
+  Layer 2 = a dive into one category, or into money in (openCompare, ref cat / hub).
+  Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
+
   CHANGELOG
+  v1.14.0 — Money back. New joint category "Money back" (money the joint account hands back
+           to Emily: the "Money back" transfers, Emily's car service/MOT, Emily's glasses),
+           built by regroupJoint (REGROUP + SPLIT_ITEMS; Apr 2026 £36 split out of Misc).
+           netMoneyBack (in applySrc) takes it off the one-off income on Layer 1, Emily's
+           top-ups/one-offs first, so Layer 1 shows net money in. Layer 2 of income (tap the
+           pot or any income source) shows raw income grouped Regular / One-offs, with
+           Money back as a striped negative block flowing back out of the pot.
+           Layer 3 for Misc 2026 (SUB_ITEMS): items from the Santander statements
+           7 Apr–5 Jun; the rest is "Not itemised yet". SP Deryan marked pending.
+           Eyebrows now say Layer 2 / Layer 3.
   v1.13.1 — 2022 fixes on the joint account (MOVE_ITEMS, applied by regroupJoint): Home Ins
            moves from Bills & subs to Annual payments as "Home insurance" (matching later
            years); Sofa moves from Bills & subs to Home projects (the sheet's House block).
@@ -135,7 +150,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.13.1</title>
+<title>Money Flow v1.14.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -273,6 +288,8 @@
   .c-list .ch{font-family:'Inter',sans-serif; font-size:8.5px; font-weight:700; margin-left:2px; white-space:nowrap;}
   .c-list .ch.bad{color:var(--c-gap);} .c-list .ch.good{color:var(--today);} .c-list .ch.new, .c-list .ch.flat{color:var(--muted); font-weight:600;}
   .c-list li.sub{padding-left:10px;} .c-list li.sub i{background:none; border:1px solid var(--c-in); width:6px; height:6px;} .c-list li.sub .nm{color:var(--paper-dim); white-space:normal; overflow-wrap:anywhere;}
+  .c-list li.grp{display:block; font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-top:4px;}
+  .c-sub.mb{color:#b42346; font-weight:600;}
   .c-list li.none{display:block; color:var(--muted); font-size:10.5px;}
   .scrim{position:fixed; inset:0; background:rgba(38,49,63,.35); z-index:50;}
   .sheet{position:fixed; left:50%; bottom:0; transform:translateX(-50%); width:min(560px,100%); max-height:82vh; overflow:auto; background:var(--surface); border-radius:18px 18px 0 0; padding:16px 18px calc(20px + env(safe-area-inset-bottom,0px)); z-index:51; box-shadow:0 -8px 30px rgba(38,49,63,.18); display:grid; gap:12px;}
@@ -456,13 +473,13 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.13.1';
+const APP_VERSION = '1.14.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
 
 const CATS = { // category → colour family, in display order of the legend
-  "Mortgage":"home","Mortgage overpayment":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Internet":"home","Home projects":"home",
+  "Mortgage":"home","Mortgage overpayment":"home","Council Tax":"home","Energy":"home","Bills & subs":"home","Internet":"home","Money back":"annual","Home projects":"home",
   "Food shop":"food","Everyday spending":"spend","Nursery":"kids","Kids' savings":"kids","Household savings":"home",
   "Holidays":"trips","Parties & weddings":"trips","Annual payments":"annual",
   // Ben's NatWest account
@@ -569,7 +586,17 @@ const MIRA_CLAIMS = [
   for(const D of Object.values(NW_DATA.years)) if(D.income['Other pay (MIRA)'] != null){ D.income['Unanswered income'] = (D.income['Unanswered income']||0) + D.income['Other pay (MIRA)']; delete D.income['Other pay (MIRA)']; }
 })();
 // Items that get their own category on the joint account, whichever sheet section they sit in.
-const REGROUP = [['Internet', /plusnet|now\s*tv|vodafone/i]];
+const REGROUP = [['Internet', /plusnet|now\s*tv|vodafone/i], ['Money back', /^emily('s)?\s+(car|glasses)|^money back/i]];
+// Part of one item moved to another category: [year, from cat, item, amount, to cat, new item]. Skipped once the new item exists.
+const SPLIT_ITEMS = [
+  ['2026', 'Everyday spending', 'Misc', 36, 'Money back', 'Money back to Emily']   // 19 Apr £15 + 27 Apr £21 transfers to Emily
+];
+// Layer 3: an item's own breakdown, from the bank statements. Whatever the item holds beyond these shows as SUB_REST.
+const SUB_REST = 'Not itemised yet';
+const SUB_ITEMS = {'2026': {'Everyday spending›Misc': {
+  'SP Deryan (pending)': 115, 'eBay': 60, 'Argos': 38, 'PayPal Pay in 3': 37, 'Etsy': 37, 'LH Trading': 26, 'Smyths Toys': 26,
+  'Cancer Research UK': 20, 'The Flower Plant': 20, 'Boots': 6 }}};
+const SUB_NOTE = {'Everyday spending›Misc': 'Itemised from the Santander statements, 7 Apr – 5 Jun 2026; send the others to itemise the rest.'};
 // One-off corrections for a single year: [year, from category, item, to category, new item name].
 const MOVE_ITEMS = [
   ['2022', 'Bills & subs', /^home ins/i, 'Annual payments', 'Home insurance'],
@@ -577,6 +604,10 @@ const MOVE_ITEMS = [
 ];
 const REGROUP_MOVED = {};   // 'Old cat›Item' → 'New cat›Item', for carrying over one-off choices
 function regroupJoint(years){
+  for(const [y, from, i, amt, toCat, as] of SPLIT_ITEMS){ const D = years && years[y], its = D && D.out && D.out[from];
+    if(!its || typeof its !== 'object' || !(its[i] >= amt)) continue;
+    const to = D.out[toCat] && typeof D.out[toCat] === 'object' ? D.out[toCat] : null; if(to && as in to) continue;
+    (D.out[toCat] = to || {})[as] = amt; its[i] = +(its[i] - amt).toFixed(2); if(!its[i]) delete its[i]; }
   for(const [y, from, re, toCat, as] of MOVE_ITEMS){ const D = years && years[y], its = D && D.out && D.out[from]; if(!its || typeof its !== 'object') continue;
     for(const i of Object.keys(its)){ if(!re.test(i)) continue;
       const to = (D.out[toCat] = D.out[toCat] && typeof D.out[toCat] === 'object' ? D.out[toCat] : (typeof D.out[toCat] === 'number' ? {[toCat]: D.out[toCat]} : {}));
@@ -602,7 +633,27 @@ const isNW = () => prefs.src === 'nw';
 const isStm = () => isNW() && prefs.nwView === 'stmts';
 const isFlow = () => prefs.src === 'joint' || prefs.src === 'nw';
 const srcData = () => isNW() ? (isStm() ? NW_DATA : NWY_DATA) : JOINT;
-const applySrc = () => { DATA = filterData(srcData()); };
+const applySrc = () => { DATA = filterData(netMoneyBack(srcData())); };
+// Money back comes off the one-off money put in (Emily's first), so Layer 1 shows what was left for joint use.
+// The raw figures stay on each year (rawIncome, moneyBack) for Layer 2 of money in.
+const MB_CAT = 'Money back', MB_FROM = ['Emily (top-ups)','Emily (one-off)','Ben (top-ups)','Ben (one-off)','Other income'];
+const MB_COLOR = '#b42346';
+function netMoneyBack(src){
+  if(isNW() || !src || !src.years) return src;
+  let any = false; const years = {};
+  for(const [y, D] of Object.entries(src.years)){
+    const mb = D.out && D.out[MB_CAT], tot = mb ? total(mb) : 0;
+    if(!(tot > 0)){ years[y] = D; continue; }
+    any = true;
+    const income = Object.assign({}, D.income), out = Object.assign({}, D.out); delete out[MB_CAT];
+    let left = tot; const from = {};
+    for(const k of MB_FROM){ if(left <= 0.005) break; const v = income[k] || 0; if(v <= 0) continue;
+      const take = Math.min(v, left); from[k] = +take.toFixed(2); left -= take; income[k] = +(v - take).toFixed(2); if(income[k] <= 0.005) delete income[k]; }
+    if(left > 0.005) out[MB_CAT] = {'More than the one-offs put in': +left.toFixed(2)};
+    years[y] = Object.assign({}, D, {income, out, rawIncome: D.income, moneyBack: typeof mb === 'number' ? {[MB_CAT]: mb} : Object.assign({}, mb), mbTotal: tot, mbFrom: from});
+  }
+  return any ? Object.assign({}, src, {years}) : src;
+}
 // ── Filter: spending categories / items Ben has chosen to hide, per account ──
 const fltKey = () => isNW() ? 'nw' : 'joint';
 const fltGet = () => { prefs.flt = prefs.flt || {}; const f = prefs.flt[fltKey()] = prefs.flt[fltKey()] || {}; f.c = f.c || {}; f.i = f.i || {}; return f; };
@@ -714,7 +765,7 @@ const savePrefs = () => { try{ localStorage.setItem(PREF_KEY, JSON.stringify(pre
 
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const gbp = v => "£" + Math.round(v).toLocaleString("en-GB");
-const total = v => typeof v === "number" ? v : Object.values(v).reduce((a,b)=>a+b,0);
+function total(v){ return typeof v === "number" ? v : Object.values(v).reduce((a,b)=>a+b,0); }   // hoisted: applySrc runs before this line
 const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const yearLabel = (y,m) => m >= 12 ? `${y} (full year)` : `${y} (Jan to ${MON[m-1]})`;
 const famColor = f => css("--c-"+f);
@@ -1020,7 +1071,7 @@ function valueIn(ref, d){
 }
 function partsIn(ref, d){
   if(ref.t==='cat'){ const c = d.out[ref.cat]; return c && typeof c==='object' ? Object.entries(c).filter(([,v])=>v>0) : []; }
-  if(ref.t==='hub'){ const p = Object.entries(d.income).filter(([,v])=>v>0); const gp = valueIn({t:'gap'}, d); if(gp>0) p.push(['Drawn from balance', gp]); return p; }
+  if(ref.t==='hub'){ const p = Object.entries(d.rawIncome || d.income).filter(([,v])=>v>0); const gp = valueIn({t:'gap'}, d); if(gp>0) p.push(['Drawn from balance', gp]); return p; }
   return [];
 }
 // One-off vs ongoing. Part years only pro-rate ongoing costs (ASDA, bills…); one-off costs
@@ -1129,7 +1180,10 @@ function openCompare(n, year, fromYears){
   let ref = n.ref || {}, hl = null, only = null;
   if(ref.t==='item'){ hl = ref.item; if(!n.showAll) only = ref.item; ref = {t:'cat', cat:ref.cat}; }
   else if(ref.t==='other'){ ref = {t:'cat', cat:ref.cat}; }
-  const title = ref.t==='cat' ? ref.cat : n.name;
+  let hlIn = null;   // Layer 2 of money in: tapping one income source opens all of money in with it lit
+  if(ref.t==='in' && !isNW()){ hlIn = ref.name; ref = {t:'hub'}; }
+  if(ref.t==='hub' && !isNW()) hl = hlIn;
+  const title = ref.t==='hub' && !isNW() ? 'Money in' : ref.t==='cat' ? ref.cat : n.name;
   const focusColor = ref.t==='cat' ? famColor(CATS[ref.cat]||'home') : (n.color || css('--c-in'));
   const isIncome = ref.t==='in' || ref.t==='hub' || ref.t==='left';
   const yrs = cmpKeys();
@@ -1139,14 +1193,17 @@ function openCompare(n, year, fromYears){
   let rows = yrs.map(y => {
     const D = DATA.years[y];
     const parts = partsIn(ref, D).map(([k,v]) => { const f = proFactor(D, catKey, k); return {k, v, a:v*f, pro:f>1}; });
+    if(ref.t==='hub' && D.mbTotal > 0) parts.push({k:MB_CAT, v:D.mbTotal, a:D.mbTotal, pro:false, neg:true,
+      items: Object.entries(D.moneyBack).map(([k,v]) => ({k, v, a:v, pro:false, neg:true})).sort((a,b)=>b.a-a.a)});
+    const pos = parts.filter(p=>!p.neg);
     let focus = valueIn(ref, D), fa = null, pro = false;
-    if(ref.t==='hub') focus = parts.reduce((s,p)=>s+p.v,0);
+    if(ref.t==='hub') focus = pos.reduce((s,p)=>s+p.v,0);
     if(focus != null){
-      if(parts.length){ fa = parts.reduce((s,p)=>s+p.a,0); pro = parts.some(p=>p.pro); }
+      if(pos.length){ fa = pos.reduce((s,p)=>s+p.a,0); pro = pos.some(p=>p.pro); }
       else { const f = proFactor(D, catKey, ref.t==='in' ? ref.name : null); fa = focus*f; pro = f>1; }
     }
-    const anyOne = parts.length ? parts.some(p=>!p.pro) : !pro;
-    return {y, D, focus, fa, pro, anyOne, parts};
+    const anyOne = pos.length ? pos.some(p=>!p.pro) : !pro;
+    return {y, D, focus, fa, pro, anyOne, parts, mb: D.mbTotal > 0 && ref.t==='hub' ? D.mbTotal : 0};
   });
   // Tapping a single item (e.g. Tesco) compares just that item year by year; the rest of its category is left out.
   if(only) rows = rows.map(r => {
@@ -1154,16 +1211,29 @@ function openCompare(n, year, fromYears){
     return {...r, parts, focus: has ? parts.reduce((a,p)=>a+p.v,0) : null, fa: has ? parts.reduce((a,p)=>a+p.a,0) : null,
             pro: parts.some(p=>p.pro), anyOne: has ? parts.some(p=>!p.pro) : false};
   });
+  // Layer 3: an item with its own breakdown (SUB_ITEMS) is split into those pieces in the years that have one.
+  const subKey = only && ref.t==='cat' && !isNW() ? ref.cat + '›' + only : null;
+  const hasSub = !!subKey && Object.values(SUB_ITEMS).some(o => o[subKey]);
+  if(hasSub) rows = rows.map(r => { const sub = (SUB_ITEMS[r.y] || {})[subKey]; if(!sub || !r.parts.length) return r;
+    const p0 = r.parts[0], f = p0.v ? p0.a / p0.v : 1, known = Object.entries(sub), rest = +(p0.v - known.reduce((t,[,v]) => t+v, 0)).toFixed(2);
+    // itemised pieces are shown as actually spent; any part-year projection sits on the not-itemised remainder
+    const kn = known.reduce((t,[,v]) => t+v, 0), parts = known.map(([k, v]) => ({k, v, a:v, pro:false}));
+    if(rest > 0.5) parts.push({k:SUB_REST, v:rest, a:p0.a - kn, pro:f>1});
+    return {...r, parts, layer3:true}; });
   // Items get one colour each, the same in every year. The 7 biggest (over all years, plus any
   // highlighted item) get their own colour; the rest are folded into "Other".
   const sizes = {}; rows.forEach(r => r.parts.forEach(p => sizes[p.k] = (sizes[p.k]||0) + p.a));
   let keys = Object.keys(sizes).sort((a,b)=>sizes[b]-sizes[a]);
-  const unfold = ref.t === 'cat';   // a category view shows every item as its own block
+  const unfold = ref.t === 'cat' || ref.t === 'hub';   // category and money-in views show every item as its own block
   let named = unfold ? keys : keys.slice(0, keys.length > 7 ? 6 : 7);
   if(hl && keys.includes(hl) && !named.includes(hl)) named = [...named.slice(0, named.length-1), hl];
-  const color = {}; named.forEach((k,i) => color[k] = ITEM_COLORS[i] || ITEM_GREYS[i % ITEM_GREYS.length]); color['Other'] = css('--c-in');
+  const grpOf = k => k === MB_CAT ? 3 : k === 'Drawn from balance' ? 2 : /\(regular\)|child benefit/i.test(k) ? 0 : 1;   // money in: regular, one-offs, drawn, back out
+  if(ref.t === 'hub') named = named.slice().sort((a,b) => grpOf(a) - grpOf(b) || sizes[b] - sizes[a]);
+  if(hasSub) named = [...named.filter(k => k !== SUB_REST), ...named.filter(k => k === SUB_REST)];
+  const color = {}; named.filter(k => k !== MB_CAT && k !== SUB_REST).forEach((k,i) => color[k] = ITEM_COLORS[i] || ITEM_GREYS[i % ITEM_GREYS.length]);
+  color['Other'] = css('--c-in'); color[MB_CAT] = MB_COLOR; color[SUB_REST] = css('--line');
   // A tapped item is pinned to the top of every year's stack, so its blocks share one baseline.
-  if(hl && named.includes(hl)) named = [hl, ...named.filter(k => k !== hl)];
+  if(hl && named.includes(hl) && ref.t !== 'hub') named = [hl, ...named.filter(k => k !== hl)];
   const order = [...named, 'Other'];
   rows.forEach(r => {
     const keep = r.parts.filter(p => named.includes(p.k)), rest = r.parts.filter(p => !named.includes(p.k));
@@ -1186,6 +1256,7 @@ function openCompare(n, year, fromYears){
     // small ▲/▼ % per item against the year before (same pro-rating as the amounts)
     const prev = ri > 0 ? new Map(rows[ri-1].parts.flatMap(p => p.items ? [p, ...p.items] : [p]).map(p=>[p.k, p.a])) : null;
     const chg = p => {
+      if(r.layer3 || (ri > 0 && rows[ri-1].layer3)) return '';
       if(!prev || p.k==='Other' || !rows[ri-1].focus) return '';
       const b = prev.get(p.k);
       if(!b) return `<span class="ch new">new</span>`;
@@ -1207,21 +1278,22 @@ function openCompare(n, year, fromYears){
         <span class="c-sub">${how}</span>
         <span class="c-amt mono">${r.focus ? ap+gbp(r.fa) : '—'}</span>
         ${part && r.focus && r.pro ? `<span class="c-sub">${gbp(r.focus)} so far</span>` : ''}
+        ${r.mb ? `<span class="c-sub mb">−${gbp(r.mb)} back · ${ap}${gbp(r.fa - r.mb)} to use</span>` : ''}
         <span class="c-delta">${delta || '&nbsp;'}</span></div>
       <div class="c-body">
       ${r.focus ? `<svg class="c-svg" data-y="${r.y}" height="${Math.ceil(Math.max(r.fa, r.parts.reduce((a,p)=>a+p.a,0))*s + Math.max(0,r.parts.length-1)*GAP + TOP + BOT)}"></svg>` : `<div class="c-empty">Nothing in ${lab(r.y)}</div>`}
-      <ul class="c-list">${r.parts.map(p => `<li data-k="${p.k.replace(/"/g,'&quot;')}" class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro ? ' so far' : ''} ${chg(p)}</span></li>` + (p.items ? p.items.map(q => `<li class="sub${canPick ? ' pick' : ''}"${canPick ? ` data-item="${q.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i></i><span class="nm">${q.k}</span><span class="am mono">${q.pro?'≈':''}${gbp(q.a)} ${chg(q)}</span></li>`).join('') : '')).join('')
+      <ul class="c-list">${r.parts.map((p, pi) => (ref.t==='hub' && !isNW() && (pi === 0 || grpOf(r.parts[pi-1].k) !== grpOf(p.k)) ? `<li class="grp">${['Regular','One-offs','From the balance','Back out'][grpOf(p.k)]}</li>` : '') + `<li data-k="${p.k.replace(/"/g,'&quot;')}" class="${p.k===hl?'hl':''}${canPick && p.k!=='Other' ? ' pick' : ''}"${canPick && p.k!=='Other' ? ` data-item="${p.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i style="background:${color[p.k]}"></i><span class="nm">${p.k}${p.n?` (${p.n})`:''}</span><span class="am mono">${p.neg?'−':''}${p.pro?'≈':''}${gbp(p.a)}${part && !p.pro && !p.neg ? ' so far' : ''} ${p.neg ? '' : chg(p)}</span></li>` + (p.items ? p.items.map(q => `<li class="sub${canPick ? ' pick' : ''}"${canPick ? ` data-item="${q.k.replace(/"/g,'&quot;')}" tabindex="0" role="button"` : ''}><i></i><span class="nm">${q.k}</span><span class="am mono">${q.neg?'−':''}${q.pro?'≈':''}${gbp(q.a)} ${q.neg ? '' : chg(q)}</span></li>`).join('') : '')).join('')
         || (r.focus && ref.t==='cat' && rows.some(q=>q.parts.length) ? `<li class="none">Not split into items in ${r.y}</li>` : '')}</ul>
       </div>
     </section>`;
   });
   html += `</div>`;
   document.getElementById('cmpTitle').textContent = only || title;
-  document.querySelector('#cmp .eyebrow').textContent = (isStm() ? 'Month by month' : 'Year by year') + (only ? ` · ${ref.cat}` : '');
+  document.querySelector('#cmp .eyebrow').textContent = `Layer ${only ? 3 : 2} · ` + (isStm() ? 'Month by month' : 'Year by year') + (only ? ` · ${ref.cat}` : '');
   const subEl = document.getElementById('cmpSub');
-  subEl.textContent = (hl && !only ? `${hl} pinned to the top · tap it again to see it alone · ` : canPick ? 'Tap an item to pin it to the top · ' : '') + (isStm() ? 'every statement month drawn to the same scale' : 'all years drawn to the same scale') + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
+  subEl.textContent = (ref.t==='hub' && !isNW() ? `${hl ? hl + ' lit · ' : ''}raw money in, regular then one-offs; money back (striped) comes off before it’s used for joint things · ` : '') + (hasSub ? (SUB_NOTE[subKey] || '') + ' · ' : '') + (hl && !only && ref.t==='cat' ? `${hl} pinned to the top · tap it again to see it alone · ` : canPick ? 'Tap an item to pin it to the top · ' : '') + (isStm() ? 'every statement month drawn to the same scale' : 'all years drawn to the same scale') + (rows.some(r=>r.D.months<12) ? ' · part years: ongoing costs pro-rated to a full year (≈), one-off costs shown as spent so far' : '');
   if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year, fromYears); subEl.append(' · ', b); }
-  if(hl && !only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = 'Unpin'; b.onclick = () => openCompare({name:ref.cat, color:focusColor, ref:{t:'cat', cat:ref.cat}}, year, fromYears); subEl.append(' · ', b); }
+  if(hl && !only && ref.t==='cat'){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = 'Unpin'; b.onclick = () => openCompare({name:ref.cat, color:focusColor, ref:{t:'cat', cat:ref.cat}}, year, fromYears); subEl.append(' · ', b); }
   // yearly personal view: link through to the bank-statement breakdown of the pinned item (or the whole category)
   const stKey = isNW() && !isStm() ? (hl || ref.cat) : null;
   if(stKey && stmtRows(stKey).length){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Bank statement breakdown of ${stKey} ›`;
@@ -1431,7 +1503,7 @@ function renderFltBar(){
   const c = document.getElementById('fltClear'); if(c) c.onclick = () => { const f = fltGet(); f.c = {}; f.i = {}; savePrefs(); setTimeout(render, 0); };
 }
 function openFilter(back){
-  const src = srcData(), esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const src = netMoneyBack(srcData()), esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const cats = {};   // cat → {sum over all years, items: {item → sum}}
   for(const D of Object.values(src.years)){ if(D.agg) continue; for(const [c, v] of Object.entries(D.out || {})){ const o = cats[c] = cats[c] || {all:0, items:{}};
     o.all += total(v); if(v && typeof v === 'object') for(const [i, x] of Object.entries(v)) o.items[i] = (o.items[i] || 0) + x; } }
@@ -1565,15 +1637,21 @@ function drawPanel(el, r, o){
   const fx = o.side==='right' ? 0 : W - nw, px = o.side==='right' ? W - nw : 0;
   const fh = r.fa * o.s, fy = o.TOP;
   let y = o.TOP, cum = fy;
-  const parts = r.parts.map(p => { const h = Math.max(1, p.a*o.s); const it = {...p, y0:y, y1:y+h, sy0:cum, sy1:cum+h}; y += h + o.GAP; cum += h; return it; });
+  // Money back (neg) leaves from the bottom of the pot bar: that slice of what came in went straight back out.
+  const negH = r.parts.filter(p => p.neg).reduce((t,p) => t + Math.max(1, p.a*o.s), 0); let ncum = fy + fh - negH;
+  const parts = r.parts.map(p => { const h = Math.max(1, p.a*o.s); let it;
+    if(p.neg){ it = {...p, y0:y, y1:y+h, sy0:ncum, sy1:ncum+h}; ncum += h; } else { it = {...p, y0:y, y1:y+h, sy0:cum, sy1:cum+h}; cum += h; }
+    y += h + o.GAP; return it; });
   const dim = k => o.hl && k !== o.hl;
   const link = d3.sankeyLinkHorizontal();
   svg.append('g').selectAll('path').data(parts).join('path').attr('class','link')
     .attr('d', p => o.side==='right'
       ? link({source:{x1:fx+nw}, target:{x0:px}, y0:(p.sy0+p.sy1)/2, y1:(p.y0+p.y1)/2})
       : link({source:{x1:px+nw}, target:{x0:fx}, y0:(p.y0+p.y1)/2, y1:(p.sy0+p.sy1)/2}))
-    .attr('stroke', p=>o.color[p.k]).attr('stroke-width', p=>p.y1-p.y0).attr('stroke-opacity', p=>dim(p.k)?.25:.45);
+    .attr('stroke', p=>o.color[p.k]).attr('stroke-width', p=>p.y1-p.y0).attr('stroke-opacity', p=>dim(p.k)?.25:p.neg?.6:.45)
+    .attr('stroke-dasharray', p=>p.neg?'3 2':null);
   svg.append('rect').attr('x',fx).attr('y',fy).attr('width',nw).attr('height',Math.max(1,fh)).attr('rx',2).attr('fill',o.focusColor);
+  if(negH > 0) svg.append('rect').attr('x',fx).attr('y',fy+fh-negH).attr('width',nw).attr('height',negH).attr('fill',MB_COLOR);
   svg.append('g').selectAll('rect').data(parts).join('rect').attr('x',px).attr('y',p=>p.y0).attr('width',nw).attr('height',p=>p.y1-p.y0).attr('rx',2)
     .attr('fill', p=>o.color[p.k]).attr('fill-opacity', p=>dim(p.k)?.55:1);
   // Label each block directly on its colour band (name wraps over lines if there's height for it,
@@ -1592,7 +1670,7 @@ function drawPanel(el, r, o){
     let nm = lines.slice(0, maxL);
     if(lines.length > maxL) nm[maxL-1] = nm[maxL-1] + '…';
     nm = nm.map(clip); if(nm.some(l => !l)) return;
-    const amt = nm.length < maxL ? (p.pro?'≈':'') + compact(p.a) : null;
+    const amt = nm.length < maxL ? (p.neg?'−':'') + (p.pro?'≈':'') + compact(p.a) : null;
     const all = amt ? [...nm, amt] : nm, y0 = (p.y0 + p.y1)/2 - (all.length - 1) * LH / 2;
     all.forEach((t, i) => gL.append('text').attr('class', amt && i === all.length-1 ? 'bl-a' : 'bl-n')
       .attr('x', tx).attr('y', y0 + i*LH).attr('dy','0.35em').attr('text-anchor', anchor).text(t));
@@ -2010,10 +2088,11 @@ function render(){
 
   const g = build(d), net = g.inTot - g.outTot - g.hidden, mort = total(d.out.Mortgage || 0);
   document.getElementById("stats").innerHTML = `
-    <div class="stat"><span class="k">Money in</span><span class="v">${gbp(g.inTot)}</span><span class="s">${DATA.subs ? DATA.subs[year] : yearLabel(year,d.months)}</span></div>
+    <div class="stat"><span class="k">Money in</span><span class="v">${gbp(g.inTot)}</span><span class="s">${DATA.subs ? DATA.subs[year] : yearLabel(year,d.months)}${d.mbTotal > 0 ? ` · after ${gbp(d.mbTotal)} money back` : ''}</span></div>
     <div class="stat"><span class="k">Money out</span><span class="v">${gbp(g.outTot)}</span><span class="s">${g.hidden > 0 ? `shown · ${gbp(g.hidden)} filtered out` : isNW() ? Math.round(total(d.out['Paid into joint account']||0)/g.outTot*100)+'% paid into the joint account' : Math.round(mort/g.outTot*100)+'% on the mortgage'}</span></div>
     <div class="stat"><span class="k">Net</span><span class="v ${net<0?'neg':'pos'}">${net<0?'−':'+'}${gbp(Math.abs(net))}</span><span class="s">${net<0?'Spent more than came in':'Left in the account'}</span></div>`;
   let nt = d.note || '';
+  if(d.mbTotal > 0) nt = (nt ? nt + ' ' : '') + `Money in is net of ${gbp(d.mbTotal)} money back (${Object.keys(d.moneyBack).join(', ')}), taken off the one-off payments. Tap the pot to see it gross.`;
   if(!isStm() && isNW() && !nt){ const pm = y => total(DATA.years[y].income)/Math.max(DATA.years[y].months,1), others = Object.keys(DATA.years).filter(y=>y!==year).map(pm).sort((a,b)=>a-b);
     if(others.length >= 2 && pm(year) > 1.8*others[Math.floor(others.length/2)]) nt = 'Income looks high for this year (about '+gbp(pm(year))+' a month against '+gbp(others[Math.floor(others.length/2)])+' in other years). The sheet probably counts transfers between your own accounts as income, so treat the net figure with care.'; }
   if(d.fromStatements) nt = d.note;
