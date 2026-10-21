@@ -41,6 +41,14 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.16.0 — Joint account from the Santander statements (Jan 2020 – Oct 2026). The
+           workbook's "Joint transactions" tab (one cleaned line per transaction, with
+           its sheet Section/Item and how it was placed) is read on "Load spreadsheet"
+           (readJointTab), kept in localStorage (JTX_KEY), and turned into calendar
+           years (jointYears) that replace the sheet's; the sheet only fills years
+           with no statements. Nothing from the statements is in this file. Joint
+           items get the "Bank statement breakdown" link (one bar per year), and
+           lines the sheet couldn't place show under Worth checking (JCHECKS).
   v1.15.2 — Built-in figures from "2026 finances 20 -AI.xlsx": two more amounts moved into
            Money back (Ben £500, Apr 2024; Emily £100, May 2022).
   v1.15.1 — Built-in figures from "2026 finances 19 -AI.xlsx": the money taken back out that
@@ -492,7 +500,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.15.2';
+const APP_VERSION = '1.16.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -645,9 +653,105 @@ function regroupJoint(years){
   return years;
 }
 regroupJoint(BUILTIN_DATA.years);
+// ── Joint account from the Santander statements ──
+// The workbook's "Joint transactions" tab holds every Santander line (cleaned of names and numbers) with the
+// sheet section and item it belongs to. It is read on this device only and kept in localStorage; nothing here is published.
+const JTX_KEY = 'moneyflow.jtx.v1';
+let JTX = null;      // [[date, amount (+ in, − out), description, category, item, how it was placed]]
+let JCHECKS = [];    // "Worth checking" notes for the joint account
+try{ const x = JSON.parse(localStorage.getItem(JTX_KEY)); if(Array.isArray(x) && x.length) JTX = x; }catch(e){}
+// sheet section + item → [in|out, app category, app item], the same naming parseSantander uses
+function jointPlace(sec, item){
+  sec = String(sec||'').trim(); item = String(item||'').trim();
+  if(sec === 'income'){
+    if(/^(ben|emily)$/i.test(item)) return ['in', item[0].toUpperCase()+item.slice(1).toLowerCase(), null];
+    if(/^(ben|emily) capex$/i.test(item)){ const w = item.split(' ')[0]; return ['in', w[0].toUpperCase()+w.slice(1).toLowerCase()+' (one-off)', null]; }
+    if(item === 'Gov') return ['in', 'Child Benefit', null];
+    if(/^loan/i.test(item)) return ['in', item, null];
+    return ['in', 'Other income', null];
+  }
+  if(sec === 'Baseline') return ['out', BASE[item] || item, null];
+  if(/^household savings/i.test(item)) return ['out', 'Household savings', null];
+  if(/^2nd mortgage/i.test(item)) return ['out', 'Mortgage overpayment', null];
+  if(item === 'LNS') return ['out', 'Home projects', '2023 Building'];
+  if(sec === 'Budgeted expenses'){ const [c, n] = BUDGETED(item); return ['out', c, n]; }
+  const cat = SECTION[sec] || 'Everyday spending', name = ALIAS[item] || item.replace(/\s+/g,' ');
+  for(const [rc, re] of REGROUP) if(re.test(name)) return ['out', rc, name];
+  return ['out', cat, name];
+}
+const NUM_CATS = new Set(['Mortgage','Council Tax','Energy','Nursery','Household savings','Mortgage overpayment']);
+function readJointTab(A){
+  const h = (A[0]||[]).map(x => String(x||'').trim().toLowerCase()), col = n => h.indexOf(n);
+  const [cD, cT, cI, cO, cS, cIt, cH] = ['date','description','money in','money out','section','item','matched by'].map(col);
+  if(cD < 0 || cS < 0 || cIt < 0) throw new Error('The “Joint transactions” tab is missing its Date, Section or Item column.');
+  const iso = v => typeof v === 'number' ? new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0,10) : String(v).slice(0,10);
+  const out = [];
+  for(let i = 1; i < A.length; i++){ const r = A[i]; if(!r || r[cD] == null) continue;
+    const amt = +(((+r[cI]||0) - (+r[cO]||0)).toFixed(2)); if(!amt) continue;
+    const [k, cat, name] = jointPlace(r[cS], r[cIt]);
+    out.push([iso(r[cD]), amt, String(r[cT]||''), k === 'in' ? 'in' : cat, k === 'in' ? cat : (name || cat), String(r[cH]||'')]); }
+  return out.sort((a,b) => a[0].localeCompare(b[0]));
+}
+// Calendar years from the statement lines. In/out tie to the bank: every line lands somewhere.
+function jointYears(rows){
+  const years = {}, by = {}; rows.forEach(t => (by[t[0].slice(0,4)] = by[t[0].slice(0,4)] || []).push(t));
+  const last = rows.length ? rows[rows.length-1][0] : null, first = rows.length ? rows[0][0] : null;
+  JCHECKS = [];
+  for(const [y, ts] of Object.entries(by)){
+    const end = last < `${y}-12-31` ? last : `${y}-12-31`;
+    if(first > `${y}-01-05`) continue;   // a year the statements only start part-way through
+    const span = Math.min(12, +((new Date(end) - new Date(y+'-01-01')) / 864e5 / (365.25/12) + 1/30).toFixed(2));
+    const income = {}, out = {}, byMonth = {}, pc = {Ben:{}, Emily:{}};
+    for(const t of ts){
+      const m = +t[0].slice(5,7) - 1;
+      if(t[3] === 'in'){ income[t[4]] = (income[t[4]]||0) + t[1];
+        if((t[4]==='Ben'||t[4]==='Emily') && t[1] > 0) (pc[t[4]][m] = pc[t[4]][m] || []).push(Math.round(t[1])); continue; }
+      const c = t[3], i = t[4], v = -t[1];
+      if(NUM_CATS.has(c)) out[c] = (out[c]||0) + v; else (out[c] = out[c] || {})[i] = ((out[c] || {})[i]||0) + v;
+      const k = c+'›'+(NUM_CATS.has(c) ? '' : i); (byMonth[k] = byMonth[k] || {})[m] = (byMonth[k][m]||0) + v;
+    }
+    // something that went the other way overall (more refunds than spend, more paid back than paid in) moves across so in − out still ties
+    for(const c of Object.keys(out)){ const its = out[c];
+      if(typeof its === 'number'){ if(its < 0){ income['Refunds & returns'] = (income['Refunds & returns']||0) - its; delete out[c]; } continue; }
+      for(const i of Object.keys(its)) if(its[i] < 0){ income['Refunds & returns'] = (income['Refunds & returns']||0) - its[i]; delete its[i]; }
+      if(!Object.keys(its).length) delete out[c]; }
+    for(const k of Object.keys(income)) if(income[k] < 0){ (out['Everyday spending'] = out['Everyday spending'] || {})['Paid back out: '+k] = -income[k]; delete income[k]; }
+    // Ben / Emily: the usual monthly payment, then top-ups (same rule as reading the sheet)
+    for(const who of ['Ben','Emily']){ if(!(income[who] > 0)) continue;
+      const months = Object.values(pc[who]), freq = {};
+      months.forEach(cells => new Set(cells.filter(x => x >= 500)).forEach(x => freq[x] = (freq[x]||0) + 1));
+      const top1 = Object.entries(freq).sort((p,q) => q[1]-p[1] || q[0]-p[0])[0];
+      let reg = 0;
+      if(top1){ const usual = Object.keys(freq).map(Number).filter(x => freq[x] >= 2 && x >= +top1[0]/2);
+        for(const cells of months){ const hit = usual.filter(x => cells.includes(x)), sum = cells.reduce((a,c) => a+c, 0);
+          reg += hit.length ? Math.max(...hit) : Math.max(0, ...usual.filter(x => x <= sum)); } }
+      reg = Math.min(reg, income[who]); const top = income[who] - reg; delete income[who];
+      if(reg > 0) income[who+' (regular)'] = reg; if(top > 0.005) income[who+' (top-ups)'] = top; }
+    const r2 = v => Math.round(v*100)/100;
+    for(const k of Object.keys(income)){ income[k] = r2(income[k]); if(!(income[k] > 0)) delete income[k]; }
+    for(const c of Object.keys(out)){ if(typeof out[c] === 'number'){ out[c] = r2(out[c]); if(!(out[c] > 0)) delete out[c]; continue; }
+      for(const i of Object.keys(out[c])){ out[c][i] = r2(out[c][i]); if(!(out[c][i] > 0)) delete out[c][i]; } if(!Object.keys(out[c]).length) delete out[c]; }
+    const lumpy = {}, filled = Math.ceil(span);
+    for(const [k, ms] of Object.entries(byMonth)){ const v = Object.values(ms).filter(x => x > 0), tot = v.reduce((a,b) => a+b, 0);
+      if(filled >= 4 && tot > 0 && (v.length <= Math.max(1, Math.floor(filled/4)) || Math.max(...v)/tot >= 0.6)) lumpy[k.replace(/›$/,'›')] = true; }
+    const ed = new Date(end);
+    years[y] = {months: Math.ceil(span), span, div: span, income, out, lumpy, fromStatements: true,
+      note: `From the Santander statements, 1 Jan – ${ed.getDate()} ${MON_S[ed.getMonth()]} ${y}.`};
+    // worth checking: lines the sheet couldn't place, and sizeable money in that isn't from either of you
+    const guess = ts.filter(t => t[5] === 'rule' && (t[4] === 'Misc' || t[4] === 'Other income'));
+    if(guess.length) JCHECKS.push({src:'joint', year:y, text:`${guess.length} line${guess.length>1?'s':''} (${gbp2(guess.reduce((a,t) => a + Math.abs(t[1]), 0))}) didn’t match the sheet or a known payee, so they’re in Misc or Other income. Tap those items for the bank statement breakdown.`});
+    ts.filter(t => t[3]==='in' && (t[4]==='Other income' || /^loan/i.test(t[4])) && t[1] >= 500).forEach(t =>
+      JCHECKS.push({src:'joint', year:y, text:`${gbp2(t[1])} came in on ${+t[0].slice(8)} ${MON_S[+t[0].slice(5,7)-1]} (“${t[2]}”) and is counted as ${t[4]}.`}));
+  }
+  return years;
+}
+const MON_S = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// Joint statement lines for one category (and item), newest first, shaped like NW_TXNS for the breakdown screens
+const jointRows = (cat, item) => (JTX || []).filter(t => t[3] !== 'in' && t[3] === cat && (!item || t[4] === item)).map(t => [t[0], t[1], t[2], t[3], t[4]]).sort((a,b) => b[0].localeCompare(a[0]));
 // ── state ──
 let JOINT = BUILTIN_DATA, DATA = BUILTIN_DATA, usingImport = false;
 try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)); if(s && s.years){ regroupJoint(s.years); JOINT = DATA = s; usingImport = true; } }catch(e){}
+if(JTX){ try{ jointYears(JTX); }catch(e){} }
 let prefs = {year:null, src:'joint', detail:window.innerWidth >= 700, nwView:'years', kids:false, asof:'latest'};
 try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }catch(e){}
 const isNW = () => prefs.src === 'nw';
@@ -931,8 +1035,15 @@ document.getElementById('fileIn').onchange = async ev => {
     const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
     const ws = wb.Sheets['Santander'];
     if(!ws) throw new Error('This workbook has no “Santander” sheet.');
-    const years = regroupJoint(parseSantander(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null})));
-    JOINT = {source:`Imported from “${f.name}” on ${new Date().toLocaleDateString('en-GB')}`, years}; prefs.src = 'joint'; applySrc();
+    let years = regroupJoint(parseSantander(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}))), jsrc = '';
+    const jt = wb.Sheets['Joint transactions'];
+    if(jt){   // statement years replace the sheet's; the sheet only fills years with no statements
+      JTX = readJointTab(XLSX.utils.sheet_to_json(jt,{header:1,raw:true,defval:null}));
+      try{ localStorage.setItem(JTX_KEY, JSON.stringify(JTX)); }catch(e){}
+      years = Object.assign({}, years, regroupJoint(jointYears(JTX)));
+      jsrc = ` · Santander statements ${JTX[0][0].slice(0,4)}–${JTX[JTX.length-1][0].slice(0,4)}, ${JTX.length.toLocaleString('en-GB')} lines`;
+    }
+    JOINT = {source:`Imported from “${f.name}” on ${new Date().toLocaleDateString('en-GB')}${jsrc}`, years}; prefs.src = 'joint'; applySrc();
     usingImport = true;
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(JOINT)); }catch(e){}
     let extra = '';
@@ -950,6 +1061,7 @@ document.getElementById('fileIn').onchange = async ev => {
 document.getElementById('resetBtn').onclick = () => {
   try{ localStorage.removeItem(STORE_KEY); }catch(e){}
   try{ localStorage.removeItem(EXTRA_KEY); }catch(e){}
+  try{ localStorage.removeItem(JTX_KEY); }catch(e){} JTX = null; JCHECKS = [];
   FULL = FULL_BUILTIN; NWY_YEARS = NWY_BUILTIN; NWY_DATA = {source:'NatWest statements where there are any (2026); earlier years from the Expenses section of the Full Summary sheet', years:withStatements(NWY_YEARS)}; usingExtra = false;
   JOINT = BUILTIN_DATA; applySrc(); usingImport = false; prefs.year = null; toast('Using built-in figures'); render();
 };
@@ -1141,7 +1253,7 @@ function txnSection(rows, heading, showItem){
     <p class="note" style="margin:0 0 6px">Newest first, named from the bank statement. Tap one to see the full statement line.</p>` +
     Object.keys(by).sort().reverse().map(m => { const ts = by[m], tot = ts.reduce((s,t)=>s-t[1],0);
       return `<div class="tx-m"><b>${MON[+m.slice(5)-1]} ${m.slice(0,4)}</b><span class="mono">${gbp(tot)}</span></div><ul class="tx-list">` +
-        ts.map(t => `<li tabindex="0" role="button"><div class="tx-row"><span class="tx-d">${d8(t[0])}</span><span class="tx-n">${esc(cleanDesc(t[2]))}${showItem(t) ? ` <em>${esc(t[4])}</em>` : ''}</span><span class="tx-a mono${t[1]>0?' refund':''}">${t[1]>0?'+':''}${gbp(-t[1]).replace('-','−')}</span></div><div class="tx-raw">${esc(t[2])}</div></li>`).join('') + `</ul>`; }).join('');
+        ts.map(t => `<li tabindex="0" role="button"><div class="tx-row"><span class="tx-d">${d8(t[0])}</span><span class="tx-n">${esc(cleanDesc(t[2]))}${showItem(t) ? ` <em>${esc(t[4])}</em>` : ''}</span><span class="tx-a mono${t[1]>0?' refund':''}">${t[1]>0?'+':''}${gbp(Math.abs(t[1]))}</span></div><div class="tx-raw">${esc(t[2])}</div></li>`).join('') + `</ul>`; }).join('');
   sec.querySelectorAll('li').forEach(li => { const tg = () => li.classList.toggle('open'); li.onclick = tg; li.onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); tg(); } }; });
   return sec;
 }
@@ -1178,24 +1290,28 @@ const stmtRows = key => { const m = STMT_MAP[key];
   return NW_TXNS.filter(hit).sort((a,b) => b[0].localeCompare(a[0])); };
 
 // Bank-statement breakdown of one spreadsheet line: month by month, split by what the statements call it.
-function openStatements(name, back){
-  const rows = stmtRows(name), esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const months = [...new Set(NW_TXNS.map(t => t[0].slice(0,7)))].sort();
-  const tot = {}, by = {}; rows.forEach(t => { const m = t[0].slice(0,7); by[m] = by[m] || {}; by[m][t[4]] = (by[m][t[4]]||0) - t[1]; tot[t[4]] = (tot[t[4]]||0) - t[1]; });
+function openStatements(name, back, jrows){
+  const rows = jrows || stmtRows(name), esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const all = jrows ? JTX : NW_TXNS;
+  let months = [...new Set(all.map(t => t[0].slice(0,7)))].sort();
+  const yearly = months.length > 24, per = t => yearly ? t[0].slice(0,4) : t[0].slice(0,7);
+  const span0 = months[0], span1 = months[months.length-1];
+  if(yearly) months = [...new Set(months.map(m => m.slice(0,4)))];
+  const tot = {}, by = {}; rows.forEach(t => { const m = per(t); by[m] = by[m] || {}; by[m][t[4]] = (by[m][t[4]]||0) - t[1]; tot[t[4]] = (tot[t[4]]||0) - t[1]; });
   const keys = Object.keys(tot).sort((a,b) => tot[b]-tot[a]), col = {}; keys.forEach((k,i) => col[k] = i < ITEM_COLORS.length ? ITEM_COLORS[i] : css('--c-in'));
   const net = rows.reduce((s,t) => s - t[1], 0), mt = m => Object.values(by[m]||{}).reduce((a,b)=>a+Math.max(0,b),0);
   const max = Math.max(1, ...months.map(mt));
   document.getElementById('cmpTitle').textContent = name;
   document.querySelector('#cmp .eyebrow').textContent = 'From bank statements';
   const subEl = document.getElementById('cmpSub');
-  subEl.textContent = `NatWest statements, ${MON[+months[0].slice(5)-1]} ${months[0].slice(0,4)} – ${MON[+months[months.length-1].slice(5)-1]} ${months[months.length-1].slice(0,4)} · older years are spreadsheet totals only`;
+  subEl.textContent = (jrows ? 'Santander statements' : 'NatWest statements') + `, ${MON[+span0.slice(5)-1]} ${span0.slice(0,4)} – ${MON[+span1.slice(5)-1]} ${span1.slice(0,4)}` + (jrows ? ' · one bar per year' : ' · older years are spreadsheet totals only');
   if(back){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← Back'; b.onclick = back; subEl.prepend(b, ' · '); }
   const body = document.getElementById('cmpBody');
   if(!rows.length){ body.innerHTML = `<div class="c-empty" style="padding:24px 8px">Nothing matching ${esc(name)} on the bank statements.</div>`; }
   else {
     body.innerHTML = `<div class="ys-wrap st-wrap">
-      <div class="st-sum"><span><b class="mono">${gbp(net)}</b> in total</span><span><b class="mono">${gbp(net/months.length)}</b> a month on average</span><span><b>${rows.length}</b> transactions</span></div>
-      <div class="st-bars">${months.map(m => `<div class="st-col"><span class="st-amt mono">${mt(m) ? compact(mt(m)) : ''}</span><div class="st-stack">${keys.filter(k => (by[m]||{})[k] > 0).map(k => `<i title="${esc(k)}: ${gbp(by[m][k])}" style="height:${by[m][k]/max*100}%;background:${col[k]}"></i>`).join('')}</div><span class="st-m">${MON[+m.slice(5)-1]}</span></div>`).join('')}</div>
+      <div class="st-sum"><span><b class="mono">${gbp(net)}</b> in total</span><span><b class="mono">${gbp(net/(yearly ? Math.max(1, (new Date(all[all.length-1][0]) - new Date(all[0][0])) / 864e5 / 30.44) : months.length))}</b> a month on average</span><span><b>${rows.length}</b> transactions</span></div>
+      <div class="st-bars">${months.map(m => `<div class="st-col"><span class="st-amt mono">${mt(m) ? compact(mt(m)) : ''}</span><div class="st-stack">${keys.filter(k => (by[m]||{})[k] > 0).map(k => `<i title="${esc(k)}: ${gbp(by[m][k])}" style="height:${by[m][k]/max*100}%;background:${col[k]}"></i>`).join('')}</div><span class="st-m">${yearly ? "’" + m.slice(2) : MON[+m.slice(5)-1]}</span></div>`).join('')}</div>
       ${keys.length > 1 ? `<ul class="st-key">${keys.map(k => `<li><i style="background:${col[k]}"></i>${esc(k)}<span class="mono">${gbp(tot[k])}</span></li>`).join('')}</ul>` : ''}
     </div>`;
     body.appendChild(txnSection(rows, name, t => keys.length > 1));
@@ -1240,7 +1356,7 @@ function openCompare(n, year, fromYears){
   });
   // Layer 3: an item with its own breakdown (SUB_ITEMS) is split into those pieces in the years that have one.
   const subKey = only && ref.t==='cat' && !isNW() ? ref.cat + '›' + only : null;
-  const hasSub = !!subKey && Object.values(SUB_ITEMS).some(o => o[subKey]);
+  const hasSub = !JTX && !!subKey && Object.values(SUB_ITEMS).some(o => o[subKey]);
   if(hasSub) rows = rows.map(r => { const sub = (SUB_ITEMS[r.y] || {})[subKey]; if(!sub || !r.parts.length) return r;
     const p0 = r.parts[0], f = p0.v ? p0.a / p0.v : 1, known = Object.entries(sub), rest = +(p0.v - known.reduce((t,[,v]) => t+v, 0)).toFixed(2);
     // itemised pieces are shown as actually spent; any part-year projection sits on the not-itemised remainder
@@ -1322,9 +1438,10 @@ function openCompare(n, year, fromYears){
   if(only){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Show all ${ref.cat} items`; b.onclick = () => openCompare({...n, showAll:true}, year, fromYears); subEl.append(' · ', b); }
   if(hl && !only && ref.t==='cat'){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = 'Unpin'; b.onclick = () => openCompare({name:ref.cat, color:focusColor, ref:{t:'cat', cat:ref.cat}}, year, fromYears); subEl.append(' · ', b); }
   // yearly personal view: link through to the bank-statement breakdown of the pinned item (or the whole category)
-  const stKey = isNW() && !isStm() ? (hl || ref.cat) : null;
-  if(stKey && stmtRows(stKey).length){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Bank statement breakdown of ${stKey} ›`;
-    b.onclick = () => openStatements(stKey, () => openCompare(n, year, fromYears)); subEl.append(' · ', b); }
+  const stKey = !isStm() && (isNW() || (JTX && ref.t==='cat')) ? (hl || ref.cat) : null;
+  const stJoint = !isNW() && stKey ? jointRows(ref.cat, hl) : null;
+  if(stKey && (stJoint ? stJoint.length : stmtRows(stKey).length)){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = `Bank statement breakdown of ${stKey} ›`;
+    b.onclick = () => openStatements(stKey, () => openCompare(n, year, fromYears), stJoint); subEl.append(' · ', b); }
   if(fromYears){ const b = document.createElement('button'); b.className = 'linkbtn'; b.textContent = '← All years'; b.onclick = () => openYears(yearsMode, year, yearsPin); subEl.prepend(b, ' · '); }
   fltLink(subEl, () => openCompare(n, year, fromYears));
   const body = document.getElementById('cmpBody'); body.innerHTML = html;
@@ -2142,7 +2259,7 @@ function render(){
 
 function renderChecks(year){
   const el = document.getElementById('checks'), src = isNW() ? 'nw' : prefs.src === 'joint' ? 'joint' : null;
-  const list = (src ? CHECKS.filter(c => (c.src === src || c.src === 'all') && (!c.year || c.year === year || (isStm() && c.src === 'nw'))) : []).concat(src === 'nw' ? payChecks(year) : []);
+  const list = (src ? CHECKS.concat(JCHECKS).filter(c => (c.src === src || c.src === 'all') && (!c.year || c.year === year || (isStm() && c.src === 'nw'))) : []).concat(src === 'nw' ? payChecks(year) : []);
   el.hidden = !list.length;
   el.innerHTML = list.length ? `<li class="ck-h">Worth checking</li>` + list.map(c => `<li>${c.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</li>`).join('') : '';
 }
