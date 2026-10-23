@@ -41,6 +41,16 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.17.0 — Filter takes in the loan and lump sums. The "Loan & extension" pill is gone:
+           it's now a Quick filter at the top of the Filter sheet (stored as
+           prefs.flt.joint.loan; the old prefs.loan is carried over). New "Lump sums of
+           £500+" quick filter (lumpLines): every single statement line of £500 or more
+           out that isn't a regular payment (a category/item with £500+ lines in 3+
+           months of a year counts as regular, e.g. the mortgage). Hide them all with one
+           tick or pick lines one by one, grouped by year (prefs.flt.<acct>.l, keyed by
+           date|amount|description). Hidden lumps come off their item in filterData and
+           join the grey "Filtered out" block. Needs statement lines (joint: the workbook's
+           Joint transactions tab; NatWest: built in).
   v1.16.1 — "Loan & extension" pill on the joint account: switches the 2022 Bank of
            Ireland loan (money in) and the LNS build payments it funded (Home
            projects › Extension (loan-funded)) on or off together (loanOff, prefs.loan).
@@ -180,7 +190,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.15.2</title>
+<title>Money Flow v1.17.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -420,6 +430,14 @@
   .flt-cat label i{width:10px; height:10px; border-radius:2px; flex:none;} .flt-cat em{font-style:normal; font-size:11px; color:var(--c-home); margin-left:4px;}
   .flt-cat input, .flt-items input{width:18px; height:18px; accent-color:var(--c-home); flex:none; margin:0;}
   .flt-items{grid-column:1/-1; list-style:none; margin:0 0 6px 27px; padding:0; display:grid; gap:2px;}
+  .flt-h{margin:14px 2px 6px; font-size:11px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-dim);}
+  .flt-q b{display:block; font-weight:600;} .flt-q small{display:block; font-size:12px; color:var(--paper-dim); line-height:1.35; margin-top:1px;} .flt-q input:disabled{opacity:.4;}
+  .flt-lumps{grid-column:1/-1; list-style:none; margin:0 0 6px 27px; padding:0; display:grid; gap:0;}
+  .flt-lumps .flt-yr{font-size:11px; font-weight:600; color:var(--paper-dim); padding:8px 0 2px; border-bottom:1px solid var(--line);}
+  .flt-lumps label{display:grid; grid-template-columns:18px 44px minmax(0,1fr) auto; align-items:center; gap:8px; padding:6px 0; font-size:13px; cursor:pointer;}
+  .flt-lumps input{width:18px; height:18px; accent-color:var(--c-home); margin:0;}
+  .flt-lumps .ld{font-size:11px; color:var(--paper-dim);} .flt-lumps b{font-weight:600; font-size:13px;}
+  .flt-lumps .lt{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;} .flt-lumps .lt small{display:block; font-size:11px; color:var(--paper-dim); overflow:hidden; text-overflow:ellipsis;}
   .flt-items label{display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; color:var(--paper-dim); cursor:pointer;}
   .pay-view{display:grid; gap:14px; margin:12px 14px 0;}
   .pay-req{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 14px 0; padding:10px 12px; border:1px solid var(--c-home); background:rgba(42,120,214,.07); border-radius:10px; font-size:13px;}
@@ -503,7 +521,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.16.1';
+const APP_VERSION = '1.17.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -685,7 +703,7 @@ function jointPlace(sec, item){
 // The 2022 Bank of Ireland loan and the extension it paid for: shown, but can be switched off together.
 const LOAN_BUILD = ['Home projects', 'Extension (loan-funded)'], isLoanIn = k => /^loan\b/i.test(k);
 function loanOff(src){
-  if(isNW() || prefs.loan !== false || !src || !src.years) return src;
+  if(isNW() || !loanHidden() || !src || !src.years) return src;
   const years = {};
   for(const [y, D] of Object.entries(src.years)){
     const lo = Object.keys(D.income || {}).filter(isLoanIn), hp = D.out && D.out[LOAN_BUILD[0]];
@@ -695,6 +713,7 @@ function loanOff(src){
     years[y] = Object.assign({}, D, {income, out}); }
   return Object.assign({}, src, {years});
 }
+const loanHidden = () => !!((prefs.flt || {}).joint || {}).loan;
 const hasLoan = () => !isNW() && Object.values(JOINT.years || {}).some(D => Object.keys(D.income || {}).some(isLoanIn));
 const NUM_CATS = new Set(['Mortgage','Council Tax','Energy','Nursery','Household savings','Mortgage overpayment']);
 function readJointTab(A){
@@ -775,6 +794,7 @@ if(JTX){ try{   // rebuild from the saved statement lines, so app updates apply 
 }catch(e){} }
 let prefs = {year:null, src:'joint', detail:window.innerWidth >= 700, nwView:'years', kids:false, asof:'latest'};
 try{ Object.assign(prefs, JSON.parse(localStorage.getItem(PREF_KEY)) || {}); }catch(e){}
+if('loan' in prefs){ if(prefs.loan === false){ prefs.flt = prefs.flt || {}; (prefs.flt.joint = prefs.flt.joint || {}).loan = 1; } delete prefs.loan; }   // v1.17: the loan pill moved into the filter
 const isNW = () => prefs.src === 'nw';
 const isStm = () => isNW() && prefs.nwView === 'stmts';
 const isFlow = () => prefs.src === 'joint' || prefs.src === 'nw';
@@ -806,11 +826,31 @@ function netMoneyBack(src){
 }
 // ── Filter: spending categories / items Ben has chosen to hide, per account ──
 const fltKey = () => isNW() ? 'nw' : 'joint';
-const fltGet = () => { prefs.flt = prefs.flt || {}; const f = prefs.flt[fltKey()] = prefs.flt[fltKey()] || {}; f.c = f.c || {}; f.i = f.i || {}; return f; };
-const fltCount = () => { const f = (prefs.flt || {})[fltKey()]; return f ? Object.keys(f.c || {}).length + Object.keys(f.i || {}).length : 0; };
+const fltGet = () => { prefs.flt = prefs.flt || {}; const f = prefs.flt[fltKey()] = prefs.flt[fltKey()] || {}; f.c = f.c || {}; f.i = f.i || {}; f.l = f.l || {}; return f; };
+const fltCount = () => { const f = (prefs.flt || {})[fltKey()]; return f ? Object.keys(f.c || {}).length + Object.keys(f.i || {}).length + Object.keys(f.l || {}).length + (f.loan && !isNW() ? 1 : 0) : 0; };
+const fltClear = f => { f.c = {}; f.i = {}; f.l = {}; delete f.loan; };
+// Lump sums: single statement lines of £500+ out that aren't a regular payment, for the account on show.
+const LUMP_MIN = 500;
+const lumpId = t => `${t[0]}|${t[1]}|${String(t[2]).slice(0,48)}`;
+const nwPer = d => { const [y,m,dd] = d.split('-').map(Number), n = dd >= 14 ? m + 1 : m; return n > 12 ? `${y+1}-01` : `${y}-${String(n).padStart(2,'0')}`; };
+function lumpLines(src){   // [{id, d, a, desc, c, i, keys: the period keys it sits in}], newest first
+  const Y = (src || srcData()).years || {}, stmtY = t => Y[t[0].slice(0,4)] && Y[t[0].slice(0,4)].fromStatements;
+  let rows = [];
+  if(!isNW()){ if(!JTX) return [];
+    rows = JTX.filter(t => t[3] !== 'in' && stmtY(t) && t[3] !== MB_CAT && !(t[3] === LOAN_BUILD[0] && t[4] === LOAN_BUILD[1]))   // the loan filter covers the build
+      .map(t => ({t, keys:[t[0].slice(0,4)], c:t[3], i: NUM_CATS.has(t[3]) ? null : t[4]})); }
+  else if(isStm()) rows = NW_TXNS.filter(t => t[3] !== 'in' && t[5] !== 'gap').map(t => ({t, keys:[nwPer(t[0]), 'ALL'], c:t[3], i:t[4]}));
+  else rows = NW_TXNS.filter(t => t[5] !== 'gap' && stmtY(t)).map(t => { const [k, c, i] = stmtPlace(t); return k === 'out' ? {t, keys:[t[0].slice(0,4)], c, i} : null; }).filter(Boolean);
+  const big = rows.filter(r => -r.t[1] >= LUMP_MIN), months = {};   // the same thing at £500+ in 3+ months of a year is a regular payment
+  big.forEach(r => { const k = r.t[0].slice(0,4)+'|'+r.c+'›'+r.i; (months[k] = months[k] || new Set()).add(r.t[0].slice(5,7)); });
+  return big.filter(r => months[r.t[0].slice(0,4)+'|'+r.c+'›'+r.i].size < 3)
+    .map(r => ({id: lumpId(r.t), d: r.t[0], a: -r.t[1], desc: r.t[2], c: r.c, i: r.i, keys: r.keys}))
+    .sort((a,b) => b.d.localeCompare(a.d) || b.a - a.a);
+}
 function filterData(src){
   if(!fltCount()) return src;
-  const f = fltGet(), years = {};
+  const f = fltGet(), years = {}, lumps = {};
+  if(Object.keys(f.l).length) for(const L of lumpLines(src)) if(f.l[L.id]) for(const k of L.keys) (lumps[k] = lumps[k] || []).push(L);
   for(const [y, D] of Object.entries(src.years)){
     const out = {}; let hid = 0;
     for(const [c, v] of Object.entries(D.out || {})){
@@ -818,7 +858,16 @@ function filterData(src){
       if(v && typeof v === 'object'){ const o = {}; for(const [i, x] of Object.entries(v)){ if(f.i[c+'›'+i]) hid += x; else o[i] = x; } if(Object.keys(o).length) out[c] = o; }
       else out[c] = v;
     }
-    years[y] = Object.assign({}, D, {out, hidden: hid});
+    for(const L of lumps[y] || []){   // a hidden lump comes off its item (capped at what the item still holds)
+      let c = L.c, i = L.i;
+      if(out[c] == null || (i != null && typeof out[c] === 'object' && !(out[c][i] > 0))){ const mv = REGROUP_MOVED[c+'›'+i]; if(mv){ [c, i] = mv.split('›'); } }
+      const v = out[c]; if(v == null) continue;
+      if(typeof v === 'number'){ const take = Math.min(v, L.a); hid += take; if(v - take > 0.005) out[c] = +(v - take).toFixed(2); else delete out[c]; continue; }
+      const x = v[i]; if(!(x > 0)) continue;
+      const take = Math.min(x, L.a); hid += take; if(x - take > 0.005) v[i] = +(x - take).toFixed(2); else delete v[i];
+      if(!Object.keys(v).length) delete out[c];
+    }
+    years[y] = Object.assign({}, D, {out, hidden: +hid.toFixed(2)});
   }
   return Object.assign({}, src, {years});
 }
@@ -1663,17 +1712,12 @@ function fltLink(subEl, back){   // "Filter ›" link on the comparison screens
 }
 function renderFltBar(){
   const el = document.getElementById('fltBar'), n = fltCount(); if(!el) return;
-  const f = (prefs.flt || {})[fltKey()] || {}, names = [...Object.keys(f.c || {}), ...Object.keys(f.i || {}).map(k => k.split('›')[1])];
+  const f = (prefs.flt || {})[fltKey()] || {}, nl = Object.keys(f.l || {}).length;
+  const names = [...(f.loan && !isNW() ? ['Loan & extension'] : []), ...(nl ? [`${nl} lump sum${nl > 1 ? 's' : ''}`] : []), ...Object.keys(f.c || {}), ...Object.keys(f.i || {}).map(k => k.split('›')[1])];
   el.innerHTML = `<button class="btn flt-btn${n ? ' on' : ''}" id="fltOpen"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filter${n ? ` · ${n} hidden` : ''}</button>
     ${n ? `<span class="flt-names">Not showing ${names.slice(0,4).map(x => x.replace(/&/g,'&amp;').replace(/</g,'&lt;')).join(', ')}${names.length > 4 ? ` +${names.length-4} more` : ''}</span><button class="linkbtn" id="fltClear">Show everything</button>` : ''}`;
-  if(hasLoan()){ const on = prefs.loan !== false, b = document.createElement('button');
-    b.className = 'btn flt-btn' + (on ? '' : ' on'); b.id = 'loanPill'; b.setAttribute('aria-pressed', String(on));
-    b.textContent = on ? 'Loan & extension: shown' : 'Loan & extension: hidden';
-    b.title = 'The 2022 Bank of Ireland loan and the extension build it paid for';
-    b.onclick = () => { prefs.loan = !on; savePrefs(); applySrc(); setTimeout(render, 0); };
-    el.prepend(b); }
   document.getElementById('fltOpen').onclick = () => openFilter();
-  const c = document.getElementById('fltClear'); if(c) c.onclick = () => { const f = fltGet(); f.c = {}; f.i = {}; savePrefs(); setTimeout(render, 0); };
+  const c = document.getElementById('fltClear'); if(c) c.onclick = () => { fltClear(fltGet()); savePrefs(); setTimeout(render, 0); };
 }
 function openFilter(back){
   const src = netMoneyBack(srcData()), esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -1681,10 +1725,24 @@ function openFilter(back){
   for(const D of Object.values(src.years)){ if(D.agg) continue; for(const [c, v] of Object.entries(D.out || {})){ const o = cats[c] = cats[c] || {all:0, items:{}};
     o.all += total(v); if(v && typeof v === 'object') for(const [i, x] of Object.entries(v)) o.items[i] = (o.items[i] || 0) + x; } }
   const order = Object.keys(cats).filter(c => cats[c].all > 0).sort((a,b) => cats[b].all - cats[a].all);
-  const open = new Set();
+  const open = new Set(), lumps = lumpLines(src), showLoan = !isNW() && hasLoan();
+  let lumpOpen = false;
+  const dm = d => `${+d.slice(8)} ${MON_S[+d.slice(5,7)-1]}`;
   const draw = () => {
     const f = fltGet(), body = document.getElementById('cmpBody');
-    body.innerHTML = `<div class="btns"><button class="btn" id="fAll">Show all</button><button class="btn" id="fNone">Hide all</button></div>
+    const nHid = lumps.filter(L => f.l[L.id]).length, lumpTot = lumps.reduce((a,L) => a + L.a, 0);
+    let yr = null;
+    const lumpList = lumpOpen && lumps.length ? `<ul class="flt-lumps">${lumps.map(L => { const y = L.d.slice(0,4), head = y !== yr ? `<li class="flt-yr">${y}</li>` : ''; yr = y;
+        return head + `<li><label><input type="checkbox" data-l="${esc(L.id)}" ${f.l[L.id] ? '' : 'checked'}><span class="ld mono">${dm(L.d)}</span><span class="lt">${esc(L.desc || L.i || L.c)}<small>${esc(L.c)}${L.i ? ' › ' + esc(L.i) : ''}</small></span><b class="mono">${gbp(L.a)}</b></label></li>`; }).join('')}</ul>` : '';
+    const lumpRow = !isNW() && !JTX
+      ? `<li class="flt-cat"><label class="flt-q"><input type="checkbox" disabled><span><b>Lump sums of £${LUMP_MIN}+</b><small>Load the spreadsheet (with its Joint transactions tab) to pick these out.</small></span></label><span></span></li>`
+      : `<li class="flt-cat"><label class="flt-q"><input type="checkbox" id="fLumps" ${nHid ? '' : 'checked'}><span><b>Lump sums of £${LUMP_MIN}+</b><small>${lumps.length ? `${lumps.length} single payment${lumps.length > 1 ? 's' : ''}, ${gbp(lumpTot)} in all${nHid ? ` · ${nHid} hidden` : ''}. Regular payments like the mortgage aren’t included.` : 'None in these figures.'}</small></span></label>
+          ${lumps.length ? `<button class="chev" id="fLumpX" aria-expanded="${lumpOpen}" aria-label="Choose lump sums">${lumpOpen ? '▾' : '▸'}</button>` : '<span></span>'}${lumpList}</li>`;
+    body.innerHTML = `<h4 class="flt-h">Quick filters</h4><ul class="flt-list">
+      ${showLoan ? `<li class="flt-cat"><label class="flt-q"><input type="checkbox" id="fLoan" ${f.loan ? '' : 'checked'}><span><b>Loan &amp; extension</b><small>The 2022 Bank of Ireland loan coming in, and the extension build it paid for.</small></span></label><span></span></li>` : ''}
+      ${lumpRow}</ul>
+      <h4 class="flt-h">Categories</h4>
+      <div class="btns"><button class="btn" id="fAll">Show all</button><button class="btn" id="fNone">Hide all</button></div>
       <p class="note" style="margin:0 2px">Untick what you don’t want to see. Charts, totals, the table and the year comparisons all follow this. Hidden spend shows as a grey “Filtered out” block, so Left over stays right.</p>
       <ul class="flt-list">` + order.map(c => { const its = Object.entries(cats[c].items).filter(([,x]) => x > 0).sort((a,b) => b[1]-a[1]), on = !f.c[c], hidItems = its.filter(([i]) => f.i[c+'›'+i]).length;
         return `<li class="flt-cat"><label><input type="checkbox" data-c="${esc(c)}" ${on ? 'checked' : ''}><i style="background:${famColor(CATS[c]||'home')}"></i><span>${esc(c)}${on && hidItems ? ` <em>${hidItems} of ${its.length} items hidden</em>` : ''}</span></label>
@@ -1694,7 +1752,12 @@ function openFilter(back){
     body.querySelectorAll('input[data-c]').forEach(el => el.onchange = () => { if(el.checked) delete f.c[el.dataset.c]; else f.c[el.dataset.c] = 1; after(); });
     body.querySelectorAll('input[data-i]').forEach(el => el.onchange = () => { if(el.checked) delete f.i[el.dataset.i]; else f.i[el.dataset.i] = 1; after(); });
     body.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { const c = b.dataset.x; open.has(c) ? open.delete(c) : open.add(c); const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; });
-    document.getElementById('fAll').onclick = () => { f.c = {}; f.i = {}; after(); };
+    const lo = document.getElementById('fLoan'); if(lo) lo.onchange = () => { if(lo.checked) delete f.loan; else f.loan = 1; after(); };
+    const la = document.getElementById('fLumps'); if(la){ la.indeterminate = nHid > 0 && nHid < lumps.length;
+      la.onchange = () => { f.l = {}; if(!la.checked) lumps.forEach(L => f.l[L.id] = 1); after(); }; }
+    const lx = document.getElementById('fLumpX'); if(lx) lx.onclick = () => { lumpOpen = !lumpOpen; const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; };
+    body.querySelectorAll('input[data-l]').forEach(el => el.onchange = () => { if(el.checked) delete f.l[el.dataset.l]; else f.l[el.dataset.l] = 1; after(); });
+    document.getElementById('fAll').onclick = () => { fltClear(f); after(); };
     document.getElementById('fNone').onclick = () => { f.c = {}; f.i = {}; order.forEach(c => f.c[c] = 1); after(); };
   };
   const sub = () => { const el = document.getElementById('cmpSub'), n = fltCount(); el.textContent = n ? `${n} hidden on ${isNW() ? 'your NatWest' : 'the joint account'}` : `Showing everything on ${isNW() ? 'your NatWest' : 'the joint account'}`;
