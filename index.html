@@ -41,6 +41,11 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.18.0 — Choose which years the year-by-year views show. The Statements chip bar
+           (stmtPicker) now also appears on the yearly views as "Years": tap years on/off,
+           or All / Last 3 / Last 5. Applies to Compare all years and every category / item
+           comparison; Layer 1 is untouched. Remembered in prefs.yrSel (statements choice,
+           cmpSel, stays per session as before).
   v1.17.5 — "What paid for this?" Unticking a category, item or single payment in the Filter
            asks which money in covered it (that year's sources, one-offs first). Pick one and
            both sides come out of the picture: the spend goes, and the same amount comes off
@@ -221,7 +226,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.17.5</title>
+<title>Money Flow v1.18.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -557,7 +562,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.17.5';
+const APP_VERSION = '1.18.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -928,21 +933,28 @@ function filterData(src){
 }
 const lab = y => (DATA.labels && DATA.labels[y]) || y;
 let cmpSel = null;   // statements chosen for comparison (null = all)
-const cmpKeys = () => { const k = yearKeys(); return isStm() && cmpSel ? (k.filter(x=>cmpSel.has(x)).length ? k.filter(x=>cmpSel.has(x)) : k) : k; };
+let yrSel = Array.isArray(prefs.yrSel) && prefs.yrSel.length ? new Set(prefs.yrSel) : null;   // years chosen for the year-by-year views (null = all); remembered
+const cmpKeys = () => { const k = yearKeys(), s = isStm() ? cmpSel : yrSel; if(!s) return k; const f = k.filter(x=>s.has(x)); return f.length ? f : k; };
 function stmtSpan(key){ const st = (NW_DATA.stmts||[]).find(x=>x.key===key); if(!st) return null;
   const m = String(st.range).match(/(\d+) (\w+)\S*?(\d+) (\w+)/); if(!m) return null;
   const y = +key.slice(0,4), em = +key.slice(5), sm = em===1 ? 12 : em-1, p = n => String(n).padStart(2,'0');
   return [`${em===1?y-1:y}-${p(sm)}-${p(m[1])}`, `${y}-${p(em)}-${p(m[3])}`]; }
+// Chips to choose which statements (month view) or years (yearly view) the comparisons show.
 function stmtPicker(body, re){
-  if(!isStm()) return;
-  const all = yearKeys(), on = new Set(cmpKeys());
+  const stm = isStm(), all = yearKeys(), on = new Set(cmpKeys());
+  if(all.length < 2) return;
+  const presets = stm ? [3] : [3, 5].filter(n => n < all.length);
   const bar = document.createElement('div'); bar.className = 'stm-pick';
-  bar.innerHTML = '<span class="lbl">Statements</span>' + all.map(k=>`<button type="button" class="chipb${on.has(k)?' on':''}" data-k="${k}" aria-pressed="${on.has(k)}">${lab(k)}</button>`).join('') +
-    '<button type="button" class="linkbtn" data-a="all">All</button><button type="button" class="linkbtn" data-a="last3">Last 3</button>';
+  bar.innerHTML = `<span class="lbl">${stm ? 'Statements' : 'Years'}</span>` + all.map(k=>`<button type="button" class="chipb${on.has(k)?' on':''}" data-k="${k}" aria-pressed="${on.has(k)}">${lab(k)}</button>`).join('') +
+    '<button type="button" class="linkbtn" data-a="all">All</button>' + presets.map(n => `<button type="button" class="linkbtn" data-a="${n}">Last ${n}</button>`).join('');
   bar.onclick = e => { const b = e.target.closest('button'); if(!b) return;
-    if(b.dataset.k){ const n = new Set(on); n.has(b.dataset.k) ? n.delete(b.dataset.k) : n.add(b.dataset.k); if(!n.size) return; cmpSel = n; }
-    else cmpSel = b.dataset.a==='all' ? null : new Set(all.slice(-3));
-    re(); };
+    let n;
+    if(b.dataset.k){ n = new Set(on); n.has(b.dataset.k) ? n.delete(b.dataset.k) : n.add(b.dataset.k); if(!n.size) return; }
+    else n = b.dataset.a==='all' ? null : new Set(all.slice(-(+b.dataset.a)));
+    if(n && n.size === all.length) n = null;
+    if(stm) cmpSel = n;
+    else { yrSel = n; if(n) prefs.yrSel = [...n]; else delete prefs.yrSel; savePrefs(); }
+    setTimeout(re, 0); };
   body.prepend(bar);
 }
 const yearKeys = () => Object.keys(DATA.years).filter(y => !DATA.years[y].agg).sort();
@@ -1957,7 +1969,7 @@ function openYears(mode, year, pin){
     r.onkeydown = ev => { if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); pick(r.dataset.k); } };
   });
   light(pin);   // the pinned category stays lit, the rest fade back
-  stmtPicker(body, () => openYears(mode, year));
+  stmtPicker(body, () => openYears(mode, year, yearsPin));
   document.getElementById('cmpX').focus({preventScroll:true});
 }
 document.getElementById('yearsBtn').onclick = () => openYears('out', prefs.year);
