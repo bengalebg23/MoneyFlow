@@ -41,6 +41,12 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.17.2 — 2026 "Worth checking" lines sorted with Ben in the workbook (Matched by "you"):
+           fair rides, Trainline/Barceloneta/Bar Dos Hermanos/Kaffek (4–5 Oct) → Trips out;
+           Engie 24 May → 2026 Holland; Awesomebooks, Kid Collective → Vivien; Derrys → House;
+           Royal Oak → Eating out; two Bedford's fair lines out of EDF/Octopus. New "pending"
+           value in Matched by: line stays in Misc, isn't counted as unmatched, and is listed
+           by name under Worth checking (Dusk £50.99, Three Posts £31.08).
   v1.17.1 — Joint vs NatWest "Worth checking" now ties for 2026. The £200 top-up the joint
            account sent back on 1 Mar nets off Ben's 2026 top-ups (£3,131 → £2,931) instead
            of sitting in Money back to Ben. The £16 T-shirts paid from NatWest are Ben's
@@ -195,7 +201,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.17.1</title>
+<title>Money Flow v1.17.2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -526,7 +532,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.17.1';
+const APP_VERSION = '1.17.2';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -782,6 +788,9 @@ function jointYears(rows){
     // worth checking: lines the sheet couldn't place, and sizeable money in that isn't from either of you
     const guess = ts.filter(t => t[5] === 'rule' && (t[4] === 'Misc' || t[4] === 'Other income'));
     if(guess.length) JCHECKS.push({src:'joint', year:y, text:`${guess.length} line${guess.length>1?'s':''} (${gbp2(guess.reduce((a,t) => a + Math.abs(t[1]), 0))}) didn’t match the sheet or a known payee, so they’re in Misc or Other income. Tap those items for the bank statement breakdown.`});
+    // lines Ben has looked at but not placed yet ("pending" in Matched by): stay in Misc, listed by name
+    const pend = ts.filter(t => /^pending$/i.test(t[5]));
+    if(pend.length) JCHECKS.push({src:'joint', year:y, text:`Pending: ${pend.length} line${pend.length>1?'s':''} (${gbp2(pend.reduce((a,t) => a + Math.abs(t[1]), 0))}) waiting on you, in Misc for now: ${pend.map(t => `${t[2].replace(/^(PAYPAL|SQ|SP|SumUp)\s*\*\s*/i,'')} ${gbp2(Math.abs(t[1]))} (${+t[0].slice(8)} ${MON_S[+t[0].slice(5,7)-1]})`).join(', ')}.`});
     ts.filter(t => t[3]==='in' && (t[4]==='Other income' || /^loan/i.test(t[4])) && t[1] >= 500).forEach(t =>
       JCHECKS.push({src:'joint', year:y, text:`${gbp2(t[1])} came in on ${+t[0].slice(8)} ${MON_S[+t[0].slice(5,7)-1]} (“${t[2]}”) and is counted as ${t[4]}.`}));
   }
