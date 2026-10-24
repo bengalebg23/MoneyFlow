@@ -41,6 +41,13 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.17.5 — "What paid for this?" Unticking a category, item or single payment in the Filter
+           asks which money in covered it (that year's sources, one-offs first). Pick one and
+           both sides come out of the picture: the spend goes, and the same amount comes off
+           that money in (each year, capped at what it brought in; any excess stays in the grey
+           Filtered out block). "Nothing, just hide it" keeps the old grey behaviour. Stored as
+           {by: source} in prefs.flt.<acct>.c / .i / .l (1 = plain hide); the "← paid by" tag
+           on a hidden row reopens the question. The year note says what was left out.
   v1.17.4 — Hide single payments from any item. In the Filter, each item (and any category
            with no items, like the mortgage) opens with ▸ to list its statement lines by
            year, biggest first (12 a year, then "Show all"). Untick a line to hide just that
@@ -214,7 +221,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.17.4</title>
+<title>Money Flow v1.17.5</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -461,6 +468,10 @@
   .flt-lumps label{display:grid; grid-template-columns:18px 44px minmax(0,1fr) auto; align-items:center; gap:8px; padding:6px 0; font-size:13px; cursor:pointer;}
   .flt-lumps input{width:18px; height:18px; accent-color:var(--c-home); margin:0;}
   .flt-lumps .ld{font-size:11px; color:var(--paper-dim);} .flt-lumps b{font-weight:600; font-size:13px;}
+  .flt-ask{grid-column:1/-1; background:var(--surface-2); border-radius:8px; padding:9px 10px; margin:2px 0 8px; display:grid; gap:4px; font-size:13px;}
+  .flt-ask small{color:var(--paper-dim); font-size:11.5px;} .flt-ask-b{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:4px;}
+  .flt-ask-b .chipb{border:1px solid var(--line); background:var(--surface); color:inherit; border-radius:999px; padding:5px 11px; font:inherit; font-size:12.5px; cursor:pointer;} .flt-ask-b .chipb small{margin-left:6px;}
+  .flt-by{grid-column:1/-1; justify-self:start; font-size:11.5px; margin:-4px 0 4px 27px;}
   .flt-items .flt-it{display:grid; grid-template-columns:1fr auto; align-items:center;} .flt-items .flt-it > ul{grid-column:1 / -1;}
   .flt-lumps .lt{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;} .flt-lumps .lt small{display:block; font-size:11px; color:var(--paper-dim); overflow:hidden; text-overflow:ellipsis;}
   .flt-items label{display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; color:var(--paper-dim); cursor:pointer;}
@@ -546,7 +557,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.17.4';
+const APP_VERSION = '1.17.5';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -879,31 +890,39 @@ function lumpLines(src){   // single £500+ lines that aren't a regular payment,
   return big.filter(r => months[r.t[0].slice(0,4)+'|'+r.c+'›'+r.i].size < 3)
     .sort((a,b) => b.d.localeCompare(a.d) || b.a - a.a);
 }
+const fltBy = v => v && typeof v === 'object' ? v.by : null;   // a hidden thing can carry the money in that paid for it
 function filterData(src){
   if(!fltCount()) return src;
   const f = fltGet(), years = {}, lumps = {};
   if(Object.keys(f.l).length) for(const L of outLines(src)) if(f.l[L.id]) for(const k of L.keys) (lumps[k] = lumps[k] || []).push(L);
   for(const [y, D] of Object.entries(src.years)){
-    const out = {}; let hid = 0;
+    const out = {}, pay = {}; let hid = 0;   // pay: money in → spend it paid for that's been hidden {amt, what}
+    const gone = (flag, amt, what) => { const by = fltBy(flag); if(by){ const p = pay[by] = pay[by] || {amt:0, what:new Set()}; p.amt += amt; p.what.add(what); } else hid += amt; };
     for(const [c, v] of Object.entries(D.out || {})){
-      if(f.c[c]){ hid += total(v); continue; }
-      if(v && typeof v === 'object'){ const o = {}; for(const [i, x] of Object.entries(v)){ if(f.i[c+'›'+i]) hid += x; else o[i] = x; } if(Object.keys(o).length) out[c] = o; }
+      if(f.c[c]){ gone(f.c[c], total(v), c); continue; }
+      if(v && typeof v === 'object'){ const o = {}; for(const [i, x] of Object.entries(v)){ if(f.i[c+'›'+i]) gone(f.i[c+'›'+i], x, i); else o[i] = x; } if(Object.keys(o).length) out[c] = o; }
       else out[c] = v;
     }
     for(const L of lumps[y] || []){   // a hidden lump comes off its item (capped at what the item still holds)
       let c = L.c, i = L.i;
       if(out[c] == null || (i != null && typeof out[c] === 'object' && !(out[c][i] > 0))){ const mv = REGROUP_MOVED[c+'›'+i]; if(mv){ [c, i] = mv.split('›'); } }
       const v = out[c]; if(v == null) continue;
-      if(typeof v === 'number'){ const take = Math.min(v, L.a); hid += take; if(v - take > 0.005) out[c] = +(v - take).toFixed(2); else delete out[c]; continue; }
+      if(typeof v === 'number'){ const take = Math.min(v, L.a); gone(f.l[L.id], take, c); if(v - take > 0.005) out[c] = +(v - take).toFixed(2); else delete out[c]; continue; }
       const x = v[i]; if(!(x > 0)) continue;
-      const take = Math.min(x, L.a); hid += take; if(x - take > 0.005) v[i] = +(x - take).toFixed(2); else delete v[i];
+      const take = Math.min(x, L.a); gone(f.l[L.id], take, i); if(x - take > 0.005) v[i] = +(x - take).toFixed(2); else delete v[i];
       if(!Object.keys(v).length) delete out[c];
     }
     // money in Ben has unticked: off the income (and the raw Layer 2 figures), shown as a grey "Filtered out" block into the pot
-    let hidIn = 0; const income = {}, rawIncome = D.rawIncome ? {} : undefined;
+    let hidIn = 0; const income = {}, rawIncome = D.rawIncome ? {} : undefined, paired = [];
     for(const [k, v] of Object.entries(D.income || {})){ if(f.n[k]) hidIn += v; else income[k] = v; }
     if(D.rawIncome) for(const [k, v] of Object.entries(D.rawIncome)) if(!f.n[k]) rawIncome[k] = v;
-    years[y] = Object.assign({}, D, {out, income, hidden: +hid.toFixed(2), hiddenIn: +hidIn.toFixed(2)}, rawIncome ? {rawIncome} : {});
+    // hidden spend that a money-in source paid for: both sides come out (capped at what that source brought in; any excess stays grey)
+    for(const [by, p] of Object.entries(pay)){ const take = Math.min(p.amt, income[by] > 0 ? income[by] : 0);
+      if(take > 0){ income[by] = +(income[by] - take).toFixed(2); if(!(income[by] > 0.005)) delete income[by];
+        if(rawIncome && rawIncome[by] > 0){ rawIncome[by] = +Math.max(0, rawIncome[by] - take).toFixed(2); if(!(rawIncome[by] > 0.005)) delete rawIncome[by]; }
+        paired.push({by, amt: +take.toFixed(2), what: [...p.what]}); }
+      hid += p.amt - take; }
+    years[y] = Object.assign({}, D, {out, income, hidden: +hid.toFixed(2), hiddenIn: +hidIn.toFixed(2), paired}, rawIncome ? {rawIncome} : {});
   }
   return Object.assign({}, src, {years});
 }
@@ -1767,13 +1786,25 @@ function openFilter(back){
   const inOrder = Object.keys(ins).filter(k => ins[k] > 0 && !(isLoanIn(k) && !isNW() && hasLoan()))   // the loan has its own quick filter
    .sort((a,b) => ins[b] - ins[a]);
   const lines = {};   // 'cat›item' (and 'cat›' for the whole category) → statement lines, for picking single payments
-  for(const L of outLines(src)){ (lines[L.dc+'›'+(L.di ?? '')] = lines[L.dc+'›'+(L.di ?? '')] || []).push(L); (lines[L.dc+'›*'] = lines[L.dc+'›*'] || []).push(L); }
+  lines['*'] = [];
+  for(const L of outLines(src)){ lines['*'].push(L); (lines[L.dc+'›'+(L.di ?? '')] = lines[L.dc+'›'+(L.di ?? '')] || []).push(L); (lines[L.dc+'›*'] = lines[L.dc+'›*'] || []).push(L); }
   const openI = new Set(), more = new Set();
   const lineList = (key, list) => { const f = fltGet(), by = {};
     list.forEach(L => (by[L.d.slice(0,4)] = by[L.d.slice(0,4)] || []).push(L));
     return `<ul class="flt-lumps">${Object.keys(by).sort().reverse().map(y => { const ls = by[y].sort((a,b) => b.a - a.a), cut = more.has(key+'|'+y) ? ls.length : 12;
-      return `<li class="flt-yr">${y}</li>` + ls.slice(0, cut).map(L => `<li><label><input type="checkbox" data-l="${esc(L.id)}" ${f.l[L.id] ? '' : 'checked'}><span class="ld mono">${dm(L.d)}</span><span class="lt">${esc(L.desc || L.di || L.dc)}</span><b class="mono">${gbp(L.a)}</b></label></li>`).join('')
+      return `<li class="flt-yr">${y}</li>` + ls.slice(0, cut).map(L => `<li><label><input type="checkbox" data-l="${esc(L.id)}" ${f.l[L.id] ? '' : 'checked'}><span class="ld mono">${dm(L.d)}</span><span class="lt">${esc(L.desc || L.di || L.dc)}</span><b class="mono">${gbp(L.a)}</b></label>${byTag('l', L.id, f.l[L.id])}${askBox('l', L.id)}</li>`).join('')
         + (ls.length > cut ? `<li><button class="linkbtn" data-more="${esc(key+'|'+y)}">Show all ${ls.length} in ${y} (smaller ones)</button></li>` : ''); }).join('')}</ul>`; };
+  let ask = null;   // {k:'c'|'i'|'l', key} — the row asking "What paid for this?"
+  const srcsFor = yrs => { const t = {}; for(const y of yrs){ const D = src.years[y]; if(!D || D.agg) continue; for(const [k, v] of Object.entries(D.income || {})) if(v > 0) t[k] = (t[k] || 0) + v; }
+    const rank = k => /one-off/i.test(k) ? 0 : /top-ups/i.test(k) ? 1 : /^loan/i.test(k) ? 3 : 2;
+    return Object.entries(t).sort((a,b) => rank(a[0]) - rank(b[0]) || b[1] - a[1]); };
+  const yrsOf = (k, key) => { if(k === 'l'){ const L = (lines['*'] || []).find(x => x.id === key); return L ? [L.d.slice(0,4)] : []; }
+    return Object.entries(src.years).filter(([, D]) => { if(D.agg || !D.out) return false; const [c, i] = k === 'c' ? [key] : key.split('›'), v = i == null ? D.out[c] : (D.out[c] || {})[i]; return v != null && total(v) > 0; }).map(([y]) => y); };
+  const askBox = (k, key) => { if(!ask || ask.k !== k || ask.key !== key) return '';
+    const yrs = yrsOf(k, key), ss = srcsFor(yrs);
+    return `<div class="flt-ask"><b>What paid for this?</b><small>Pick the money in that covered it and both come out of the picture${yrs.length > 1 ? ' (each year, up to what that money in was)' : ''}. Or just hide it and it shows as Filtered out.</small>
+      <div class="flt-ask-b">${ss.map(([n, v]) => `<button class="chipb" data-by="${esc(n)}">${esc(n)}<small class="mono">${gbp(v)}${yrs.length === 1 ? '' : ' in all'}</small></button>`).join('')}<button class="linkbtn" data-by="">Nothing, just hide it</button></div></div>`; };
+  const byTag = (k, key, v) => { const by = fltBy(v); return v ? `<button class="linkbtn flt-by" data-ask="${k}|${esc(key)}">${by ? '← paid by ' + esc(by) : 'What paid for this?'}</button>` : ''; };
   const hidN = list => { const f = fltGet(); return (list || []).filter(L => f.l[L.id]).length; };
   const open = new Set(), lumps = lumpLines(src), showLoan = !isNW() && hasLoan();
   let lumpOpen = false;
@@ -1796,17 +1827,22 @@ function openFilter(back){
       <ul class="flt-list">${inOrder.map(k => `<li class="flt-cat"><label><input type="checkbox" data-n="${esc(k)}" ${f.n[k] ? '' : 'checked'}><i style="background:${/top-ups/.test(k) ? css('--c-top') : css('--c-in')}"></i><span>${esc(clean(k))}</span></label><span></span></li>`).join('')}</ul>
       <h4 class="flt-h">Money out</h4>
       <div class="btns"><button class="btn" id="fAll">Show all</button><button class="btn" id="fNone">Hide all</button></div>
-      <p class="note" style="margin:0 2px">Untick what you don’t want to see. Open an item (▸) to untick single payments, like a big one-off, and keep the rest. Charts, totals, the table and the year comparisons all follow this. Hidden spend shows as a grey “Filtered out” block, so Left over stays right.</p>
+      <p class="note" style="margin:0 2px">Untick what you don’t want to see. Open an item (▸) to untick single payments, like a big one-off, and keep the rest. Charts, totals, the table and the year comparisons all follow this. When you untick something you’re asked what paid for it: pick that money in and both come out; otherwise it shows as a grey “Filtered out” block, so Left over stays right.</p>
       <ul class="flt-list">` + order.map(c => { const its = Object.entries(cats[c].items).filter(([,x]) => x > 0).sort((a,b) => b[1]-a[1]), on = !f.c[c], hidItems = its.filter(([i]) => f.i[c+'›'+i]).length;
-        return `<li class="flt-cat"><label><input type="checkbox" data-c="${esc(c)}" ${on ? 'checked' : ''}><i style="background:${famColor(CATS[c]||'home')}"></i><span>${esc(c)}${on && hidItems ? ` <em>${hidItems} of ${its.length} items hidden</em>` : ''}</span></label>
+        return `<li class="flt-cat"><label><input type="checkbox" data-c="${esc(c)}" ${on ? 'checked' : ''}><i style="background:${famColor(CATS[c]||'home')}"></i><span>${esc(c)}${on && hidItems ? ` <em>${hidItems} of ${its.length} items hidden</em>` : ''}</span></label>${on ? '' : byTag('c', c, f.c[c])}
           ${on && (its.length > 1 || lines[c+'›*']) ? `<button class="chev" data-x="${esc(c)}" aria-expanded="${open.has(c)}" aria-label="${its.length > 1 ? 'Choose items' : 'Choose payments'}">${open.has(c) ? '▾' : '▸'}</button>` : '<span></span>'}
+          ${askBox('c', c)}
           ${on && open.has(c) && its.length <= 1 && lines[c+'›*'] ? lineList(c+'›*', lines[c+'›*']) : ''}
           ${its.length > 1 && on && open.has(c) ? `<ul class="flt-items">${its.map(([i]) => { const k = c+'›'+i, ls = lines[k], hn = hidN(ls), iOn = !f.i[k];
-            return `<li class="flt-it"><label><input type="checkbox" data-i="${esc(k)}" ${iOn ? 'checked' : ''}><span>${esc(i)}${iOn && hn ? ` <em>${hn} payment${hn > 1 ? 's' : ''} hidden</em>` : ''}</span></label>${iOn && ls ? `<button class="chev" data-xi="${esc(k)}" aria-expanded="${openI.has(k)}" aria-label="Choose payments">${openI.has(k) ? '▾' : '▸'}</button>` : '<span></span>'}${iOn && ls && openI.has(k) ? lineList(k, ls) : ''}</li>`; }).join('')}</ul>` : ''}</li>`; }).join('') + `</ul>`;
+            return `<li class="flt-it"><label><input type="checkbox" data-i="${esc(k)}" ${iOn ? 'checked' : ''}><span>${esc(i)}${iOn && hn ? ` <em>${hn} payment${hn > 1 ? 's' : ''} hidden</em>` : ''}</span></label>${byTag('i', k, f.i[k])}${iOn && ls ? `<button class="chev" data-xi="${esc(k)}" aria-expanded="${openI.has(k)}" aria-label="Choose payments">${openI.has(k) ? '▾' : '▸'}</button>` : '<span></span>'}${askBox('i', k)}${iOn && ls && openI.has(k) ? lineList(k, ls) : ''}</li>`; }).join('')}</ul>` : ''}</li>`; }).join('') + `</ul>`;
     const after = () => { savePrefs(); const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; setTimeout(render, 0); sub(); };
-    body.querySelectorAll('input[data-c]').forEach(el => el.onchange = () => { if(el.checked) delete f.c[el.dataset.c]; else f.c[el.dataset.c] = 1; after(); });
+    const tog = (o, k, key, on) => { if(on){ delete o[key]; if(ask && ask.key === key) ask = null; } else { o[key] = 1; ask = {k, key}; } after(); };
+    body.querySelectorAll('input[data-c]').forEach(el => el.onchange = () => tog(f.c, 'c', el.dataset.c, el.checked));
+    body.querySelectorAll('[data-ask]').forEach(b => b.onclick = () => { const [k, ...r] = b.dataset.ask.split('|'), key = r.join('|'); ask = ask && ask.key === key ? null : {k, key}; redraw(); });
+    body.querySelectorAll('[data-by]').forEach(b => b.onclick = () => { if(!ask) return; const o = ask.k === 'c' ? f.c : ask.k === 'i' ? f.i : f.l;
+      o[ask.key] = b.dataset.by ? {by: b.dataset.by} : 1; ask = null; after(); });
     body.querySelectorAll('input[data-n]').forEach(el => el.onchange = () => { if(el.checked) delete f.n[el.dataset.n]; else f.n[el.dataset.n] = 1; after(); });
-    body.querySelectorAll('input[data-i]').forEach(el => el.onchange = () => { if(el.checked) delete f.i[el.dataset.i]; else f.i[el.dataset.i] = 1; after(); });
+    body.querySelectorAll('input[data-i]').forEach(el => el.onchange = () => tog(f.i, 'i', el.dataset.i, el.checked));
     const redraw = () => { const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; };
     body.querySelectorAll('[data-xi]').forEach(b => b.onclick = () => { const k = b.dataset.xi; openI.has(k) ? openI.delete(k) : openI.add(k); redraw(); });
     body.querySelectorAll('[data-more]').forEach(b => b.onclick = () => { more.add(b.dataset.more); redraw(); });
@@ -1815,7 +1851,7 @@ function openFilter(back){
     const la = document.getElementById('fLumps'); if(la){ la.indeterminate = nHid > 0 && nHid < lumps.length;
       la.onchange = () => { lumps.forEach(L => { if(la.checked) delete f.l[L.id]; else f.l[L.id] = 1; }); after(); }; }
     const lx = document.getElementById('fLumpX'); if(lx) lx.onclick = () => { lumpOpen = !lumpOpen; const st = document.getElementById('cmp').scrollTop; draw(); document.getElementById('cmp').scrollTop = st; };
-    body.querySelectorAll('input[data-l]').forEach(el => el.onchange = () => { if(el.checked) delete f.l[el.dataset.l]; else f.l[el.dataset.l] = 1; after(); });
+    body.querySelectorAll('input[data-l]').forEach(el => el.onchange = () => tog(f.l, 'l', el.dataset.l, el.checked));
     document.getElementById('fAll').onclick = () => { fltClear(f); after(); };
     document.getElementById('fNone').onclick = () => { f.c = {}; f.i = {}; order.forEach(c => f.c[c] = 1); after(); };
   };
@@ -2391,6 +2427,7 @@ function render(){
   if(!isStm() && isNW() && !nt){ const pm = y => total(DATA.years[y].income)/Math.max(DATA.years[y].months,1), others = Object.keys(DATA.years).filter(y=>y!==year).map(pm).sort((a,b)=>a-b);
     if(others.length >= 2 && pm(year) > 1.8*others[Math.floor(others.length/2)]) nt = 'Income looks high for this year (about '+gbp(pm(year))+' a month against '+gbp(others[Math.floor(others.length/2)])+' in other years). The sheet probably counts transfers between your own accounts as income, so treat the net figure with care.'; }
   if(d.fromStatements) nt = d.note;
+  if(d.paired && d.paired.length) nt = (nt ? nt + ' ' : '') + d.paired.map(p => `${gbp(p.amt)} of ${p.what.join(', ')} and the ${p.by} money that paid for it are left out.`).join(' ');
   document.getElementById("note").textContent = nt;
   renderChecks(year);
   renderFltBar();
