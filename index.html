@@ -48,6 +48,8 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.19.1 — Installable as a real app: manifest.json, PNG icons and a network-first sw.js
+           (before, Android could only make a Chrome shortcut).
   v1.19.0 — Nothing built in: the joint figures, NatWest statement lines and periods, net worth extras,
            student loan, mortgage, pension, MIRA claims and payslip defaults are gone from this file.
            They now come from the workbook (new "App data" and "NatWest transactions" tabs; see
@@ -244,7 +246,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.19.0</title>
+<title>Money Flow v1.19.1</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -590,7 +594,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.19.1';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -2695,5 +2699,6 @@ document.getElementById('versionBadge').textContent = `v${APP_VERSION}`;
 render();
 try{ const m = sessionStorage.getItem('moneyflow.toast'); if(m){ sessionStorage.removeItem('moneyflow.toast'); toast(m); } }catch(e){}
 </script>
+<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});</script>
 </body>
 </html>
