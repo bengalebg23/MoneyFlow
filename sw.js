@@ -1,6 +1,6 @@
 // Service worker for Money Flow. Network-first so updates show straight away;
 // the cache only serves the app when offline. Bump CACHE on every release.
-const CACHE = 'moneyflow-v1.19.1';
+const CACHE = 'moneyflow-v1.19.2';
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html'])).then(() => self.skipWaiting()));
 });
