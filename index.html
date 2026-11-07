@@ -48,6 +48,14 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.20.0 — "Next 31 days" (openNext31 / p31Model), for Santander (Joint transactions) and NatWest
+           (NatWest transactions). Regular payments = an outgoing item (category › item › payee words) seen
+           once or twice a month in at least 2 of the last 3 complete statement months; amount = latest,
+           day = middle of the days seen. Payday = the biggest regular money in (£500+). Average week = the
+           last 8 weeks' other spending, leaving out the biggest week (Sprive top-ups and statement "gap" lines left out).
+           A 31-day bar from today with the regular payments on their days; drag the handle to a date to
+           see regular + average spend by then, and what's left of a typed balance. Ticks, amounts, the
+           weekly figure, added payments and balances live in prefs.p31.
   v1.19.2 — "Install app" button (shows only when Chrome says it can install).
   v1.19.1 — Installable as a real app: manifest.json, PNG icons and a network-first sw.js
            (before, Android could only make a Chrome shortcut).
@@ -247,7 +255,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.19.2</title>
+<title>Money Flow v1.20.0</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -311,6 +319,23 @@
   .roy-num, .roy-txt, .roy-add select{font:14px 'IBM Plex Mono',monospace; padding:6px 7px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--paper); width:100%; box-sizing:border-box; min-width:0;}
   .roy-num{text-align:right;} .roy-txt{font-family:'Inter',sans-serif;} .roy-add .x{border:0; background:none; color:var(--paper-dim); font-size:15px; cursor:pointer; padding:4px;}
   .roy-num:disabled, .roy-txt:disabled, .roy-add select:disabled{opacity:.6;}
+  .p31-acct{display:flex; gap:4px; margin:0 0 10px;}
+  .p31-bal{display:grid; grid-template-columns:minmax(0,1fr) 120px; gap:8px; align-items:center; margin:0 2px 10px; font-size:13.5px;}
+  .p31-track{position:relative; height:86px; margin:14px 4px 4px; touch-action:none; cursor:pointer; user-select:none; -webkit-user-select:none;}
+  .p31-base{position:absolute; left:0; right:0; top:52px; height:6px; border-radius:3px; background:var(--surface-2);}
+  .p31-fill{position:absolute; left:0; top:52px; height:6px; border-radius:3px; background:var(--mustard); opacity:.35;}
+  .p31-wk{position:absolute; top:46px; width:1px; height:18px; background:var(--line);}
+  .p31-bar{position:absolute; bottom:34px; width:7px; margin-left:-3.5px; border-radius:2px 2px 0 0; background:var(--c-home);}
+  .p31-bar.after{opacity:.28;}
+  .p31-pay{position:absolute; top:0; margin-left:-1px; width:2px; bottom:28px; background:var(--today);}
+  .p31-pay span{position:absolute; top:20px; left:4px; font:600 10px 'Inter',sans-serif; color:var(--today); white-space:nowrap;}
+  .p31-lbl{position:absolute; top:66px; transform:translateX(-50%); font:10px 'IBM Plex Mono',monospace; color:var(--paper-dim); white-space:nowrap;}
+  .p31-h{position:absolute; top:14px; bottom:18px; width:0; border-left:2px solid var(--paper);}
+  .p31-h b{position:absolute; top:31px; left:-10px; width:18px; height:18px; border-radius:50%; background:var(--surface); border:2px solid var(--paper); box-shadow:0 1px 4px rgba(0,0,0,.2);}
+  .p31-h span{position:absolute; top:-15px; transform:translateX(-50%); font:600 11px 'Inter',sans-serif; white-space:nowrap; background:var(--paper); color:#fff; padding:1px 6px; border-radius:6px;}
+  .p31-due li{grid-template-columns:84px minmax(0,1fr) auto !important;} .p31-due li.after{opacity:.4;} .p31-due .dy{font:12px 'IBM Plex Mono',monospace; color:var(--paper-dim);}
+  .oo-cat li.p31-reg{grid-template-columns:minmax(0,1fr) 96px;} .p31-reg .nm small{display:block; font-size:11px; color:var(--paper-dim); font-weight:400;}
+  .oo-cat li.p31-add{grid-template-columns:minmax(0,1fr) 58px 88px auto;}
   .empty-view{padding:16px 18px;} .empty-view h2{margin:0 0 6px;} .empty-view p{margin:6px 0; font-size:14px; color:var(--paper-dim);}
 
   .bar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;}
@@ -552,6 +577,7 @@
       <button class="btn" id="yearsBtn">Compare all years</button>
       <button class="btn" id="oneOffBtn">One-offs</button>
       <button class="btn" id="royBtn" hidden>Rest of year</button>
+      <button class="btn" id="p31Btn" hidden>Next 31 days</button>
       <button class="btn primary" id="loadBtn">Load spreadsheet</button>
       <button class="btn" id="resetBtn" hidden>Clear loaded data</button>
       <input type="file" id="fileIn" accept=".xlsx,.xlsm,.xls" hidden>
@@ -595,7 +621,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.19.2';
+const APP_VERSION = '1.20.0';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -2576,6 +2602,140 @@ function openRestOfYear(){
 }
 document.getElementById('royBtn').onclick = () => openRestOfYear();
 
+// ── Next 31 days: money planned to leave Santander or NatWest before the next payday ──
+// Regular payments come from the statement lines (JTX for Santander, NW_TXNS for NatWest): an outgoing
+// item seen once or twice a month in at least 2 of the last 3 complete months. Everything else is
+// "other spending": the last 8 weeks' average, leaving out the biggest week. Drag the handle to a date.
+const P31_DEF = {acct:null, off:{}, amt:{}, wk:{}, bal:{}, add:{joint:[], nw:[]}};
+const p31P = () => { if(!prefs.p31 || !prefs.p31._v) prefs.p31 = Object.assign(JSON.parse(JSON.stringify(P31_DEF)), prefs.p31 || {}, {_v:1}); return prefs.p31; };
+const p31Lines = a => a === 'nw' ? NW_TXNS.filter(t => t[5] !== 'gap') : (JTX || []);
+const P31_NOISE = /\b(DIRECT DEBIT|DD|D D|STANDING ORDER|SO|S O|PAYMENT TO|PAYMENT|CARD|BILL|FASTER|TRANSFER|TO|FROM|VIA|MOBILE|ONLINE|BANKING|REF|REFERENCE|BP|TFR|DEB|POS|CR|DR|THE)\b/g;
+const p31Words = d => String(d || '').toUpperCase().replace(/[^A-Z& ]/g, ' ').replace(P31_NOISE, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 2).join(' ');
+function p31Model(a){
+  const R = p31P(), rows = p31Lines(a); if(!rows.length) return null;
+  const last = rows[rows.length-1][0], ly = +last.slice(0,4), lm = +last.slice(5,7), ld = +last.slice(8,10);
+  const dnum = d => Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10)) / 864e5, L = dnum(last);
+  // last 3 complete statement months (the last month counts if the statements reach its last few days)
+  const mk = (y, m) => { while(m < 1){ m += 12; y--; } return `${y}-${String(m).padStart(2,'0')}`; };
+  const endM = ld >= new Date(ly, lm, 0).getDate() - 2 ? lm : lm - 1, mons = [mk(ly, endM-2), mk(ly, endM-1), mk(ly, endM)];
+  const key = t => [t[3], t[4], p31Words(t[2])].join('›');
+  const grp = {};
+  for(const t of rows){ const m = t[0].slice(0,7); if(!mons.includes(m)) continue;
+    if(t[3] === 'Covered by joint account' || (t[3] === LOAN_BUILD[0] && t[4] === LOAN_BUILD[1])) continue;
+    const k = (t[1] < 0 ? 'o›' : 'i›') + key(t), g = grp[k] = grp[k] || {k, by:{}, all:[]};
+    (g.by[m] = g.by[m] || []).push(t); g.all.push(t); }
+  const regs = [], pays = [], regKeys = new Set();
+  for(const g of Object.values(grp)){
+    const hit = mons.filter(m => g.by[m] && g.by[m].length <= 2).length; if(hit < 2 || mons.some(m => (g.by[m] || []).length > 2)) continue;
+    const lt = g.all[g.all.length-1], dd = g.all.map(t => +t[0].slice(8,10)).sort((x,y) => x - y), day = dd[Math.floor(dd.length/2)];
+    const per = g.all.length / hit;   // one or two a month
+    const o = {k: g.k, cat: lt[3], item: lt[4], words: p31Words(lt[2]), day, amt: Math.abs(lt[1]), n: g.all.length, per, lastDate: lt[0]};
+    if(per > 1.5){ const ds = [...new Set(dd)]; o.days = [ds[0], ds[ds.length-1]]; }
+    if(lt[1] < 0){ regs.push(o); regKeys.add(key(lt)); } else if(Math.abs(lt[1]) >= 500) pays.push(o);
+  }
+  // names: the item, plus the payee words when two regular payments share an item
+  const cnt = {}; regs.forEach(r => cnt[r.item] = (cnt[r.item] || 0) + 1);
+  const title = w => w.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  regs.forEach(r => { const it = r.item && r.item !== 'in' ? r.item : r.cat; r.name = cnt[r.item] > 1 && r.words ? `${it} · ${title(r.words)}` : (it || title(r.words) || 'Payment'); });
+  regs.sort((x,y) => x.day - y.day || y.amt - x.amt);
+  pays.sort((x,y) => y.amt - x.amt); const pay = pays[0] || null;
+  // other spending: the last 8 weeks' average, leaving out the biggest week (to the last statement date)
+  const wks = []; for(let w = 0; w < 8; w++) wks.push(0);
+  for(const t of rows){ const d = dnum(t[0]), w = Math.floor((L - d) / 7); if(w < 0 || w > 7 || t[1] >= 0) continue;
+    if(t[3] === 'in' || t[3] === 'Covered by joint account' || (t[3] === LOAN_BUILD[0] && t[4] === LOAN_BUILD[1]) || regKeys.has(key(t))) continue;
+    wks[w] -= t[1]; }
+  const srt = wks.slice().sort((x,y) => x - y), wkMid = srt.slice(0, 7).reduce((s,v) => s + v, 0) / 7, wkMean = wks.reduce((s,v) => s + v, 0) / 8;   // wkMid: mean leaving out the biggest week (a one-off)
+  const wk = R.wk[a] != null ? +R.wk[a] : Math.round(wkMid);
+  // the 31 days from today
+  const now = new Date(), days = [];
+  for(let i = 0; i < 31; i++){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i); days.push({i, d, dom: d.getDate(), len: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(), due: [], pay: false}); }
+  const on = (dy, day) => dy.dom === Math.min(day, dy.len);
+  const items = regs.map(r => Object.assign(r, {off: !!R.off[r.k], use: R.amt[r.k] != null ? +R.amt[r.k] : Math.round(r.amt)}));
+  const adds = (R.add[a] = R.add[a] || []);
+  for(const dy of days){
+    for(const r of items){ if(r.off) continue; const ds = r.days || [r.day]; if(ds.some(x => on(dy, x))) dy.due.push({name: r.name, amt: r.use}); }
+    adds.forEach(x => { if(+x.d && on(dy, +x.d) && +x.a) dy.due.push({name: x.n || 'Added payment', amt: +x.a, added: true}); });
+    if(pay && on(dy, pay.day)) dy.pay = true; }
+  // the handle starts on the day before the next payday (or day 31)
+  const pd = days.findIndex(dy => dy.pay && dy.i > 0), def = pd > 0 ? pd - 1 : 30;
+  return {a, last, mons, items, pay, wk, wkMid, wkMean, wks, days, def, adds, bal: R.bal[a]};
+}
+function openNext31(acct){
+  const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const body = document.getElementById('cmpBody'), cmp = document.getElementById('cmp'), R = p31P();
+  const has = {joint: !!(JTX && JTX.length), nw: NW_TXNS.length > 0}, NAME = {joint:'Santander', nw:'NatWest'};
+  let a = acct && has[acct] ? acct : (R.acct && has[R.acct] ? R.acct : (has.joint ? 'joint' : 'nw')), k = null;
+  const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], dt = d => `${WD[d.getDay()]} ${d.getDate()} ${MON_S[d.getMonth()]}`;
+  const x = i => ((i + 0.5) / 31 * 100).toFixed(2) + '%';
+  const draw = () => {
+    const M = p31Model(a); if(!M){ body.innerHTML = '<p class="note">No statement lines loaded for this account.</p>'; return; }
+    if(k == null) k = M.def;
+    const ll = M.last.split('-'), lastTxt = `${+ll[2]} ${MON_S[+ll[1]-1]}`, mx = Math.max(1, ...M.days.map(dy => dy.due.reduce((s,z) => s + z.amt, 0)));
+    const payTxt = M.pay ? `${M.pay.name || M.pay.item || 'Pay'} usually lands on the ${M.pay.day}${['th','st','nd','rd'][(M.pay.day % 10 > 3 || [11,12,13].includes(M.pay.day)) ? 0 : M.pay.day % 10]}` : 'No regular pay found';
+    body.innerHTML = `${has.joint && has.nw ? `<div class="p31-acct">${['joint','nw'].map(z => `<button class="sub-tab${z === a ? ' active' : ''}" data-acct="${z}">${NAME[z]}</button>`).join('')}</div>` : ''}
+      <label class="p31-bal"><span>Balance in ${NAME[a]} now</span><input class="roy-num" type="number" inputmode="decimal" id="p31Bal" placeholder="£" value="${M.bal != null ? M.bal : ''}"></label>
+      <div class="oo-sum" id="p31Sum"></div>
+      <div class="p31-track" id="p31Track" role="slider" tabindex="0" aria-label="Date to plan to" aria-valuemin="1" aria-valuemax="31">
+        <div class="p31-base"></div><div class="p31-fill" id="p31Fill"></div>
+        ${M.days.filter(dy => dy.d.getDay() === 1).map(dy => `<div class="p31-wk" style="left:${x(dy.i)}"></div>`).join('')}
+        ${M.days.map(dy => { const v = dy.due.reduce((s,z) => s + z.amt, 0); return v ? `<div class="p31-bar" data-i="${dy.i}" style="left:${x(dy.i)};height:${(6 + 30 * Math.sqrt(v / mx)).toFixed(1)}px"></div>` : ''; }).join('')}
+        ${M.days.filter(dy => dy.pay).map(dy => `<div class="p31-pay" style="left:${x(dy.i)}"><span>Pay</span></div>`).join('')}
+        ${M.days.filter(dy => dy.i === 0 || dy.dom === 1 || dy.i % 7 === 0).map(dy => `<span class="p31-lbl" style="left:${x(dy.i)}">${dy.dom}${dy.i === 0 || dy.dom === 1 ? ' ' + MON_S[dy.d.getMonth()] : ''}</span>`).join('')}
+        <div class="p31-h" id="p31H"><span id="p31HL"></span><b></b></div>
+      </div>
+      <p class="note" style="margin:2px 2px 10px">Drag along the bar. Blue bars are regular payments; green is payday (${esc(payTxt)}). Statements run to ${lastTxt}, so anything due before today is taken as paid.</p>
+      <section class="oo-cat"><h3><i style="background:${css('--c-home')}"></i>Regular payments due</h3><ul class="p31-due" id="p31Due"></ul></section>
+      <section class="oo-cat"><h3><i style="background:${css('--c-spend')}"></i>Average spend per week</h3><ul>
+        <li class="p31-reg"><span class="nm">Everything that isn't a regular payment<small>Last 8 weeks to ${lastTxt}: average ${gbp(M.wkMean)}, or ${gbp(M.wkMid)} leaving out the biggest week (used)</small></span><input class="roy-num" type="number" inputmode="decimal" id="p31Wk" value="${M.wk}"></li></ul></section>
+      <section class="oo-cat"><h3><i style="background:${css('--c-annual')}"></i>Regular payments found</h3>
+        <p class="note" style="margin:2px 2px 6px">Seen most months in ${M.mons.map(m => MON_S[+m.slice(5,7)-1]).join(', ')}. Untick any that have stopped; amounts are the latest one.</p><ul>${M.items.map(r => `<li class="p31-reg">
+          <label class="chk"><input type="checkbox" data-off="${esc(r.k)}"${r.off ? '' : ' checked'}><span class="nm">${esc(r.name)}<small>${r.days ? `twice a month, around the ${r.days[0]} and ${r.days[1]}` : `around the ${r.day}`} · last ${gbp(r.amt)}</small></span></label>
+          <input class="roy-num" type="number" inputmode="decimal" data-amt="${esc(r.k)}" value="${r.use}"></li>`).join('') || '<li><span class="nm">None found.</span></li>'}</ul></section>
+      <section class="oo-cat"><h3><i style="background:${css('--c-trips')}"></i>Added by you</h3><ul>${M.adds.map((z, n) => `<li class="p31-add">
+          <input class="roy-txt" data-an="${n}" value="${esc(z.n || '')}" aria-label="What it is">
+          <input class="roy-num" type="number" inputmode="numeric" data-ad="${n}" value="${+z.d || ''}" aria-label="Day of month" placeholder="day">
+          <input class="roy-num" type="number" inputmode="decimal" data-aa="${n}" value="${+z.a || 0}" aria-label="Amount"><button class="x" data-ax="${n}" aria-label="Remove" style="border:0;background:none;color:var(--paper-dim);font-size:15px;cursor:pointer">✕</button></li>`).join('')}</ul>
+        <p style="margin:8px 2px"><button class="linkbtn" id="p31Add">+ Add a payment</button></p></section>`;
+    const upd = () => {
+      const dy = M.days[k], due = M.days.slice(0, k + 1).flatMap(z => z.due.map(q => Object.assign({d: z.d}, q))), ddT = due.reduce((s,z) => s + z.amt, 0);
+      const sp = M.wk * (k + 1) / 7, tot = ddT + sp, bal = M.bal != null && M.bal !== '' ? +M.bal : null, left = bal != null ? bal - tot : null;
+      document.getElementById('p31Fill').style.width = ((k + 1) / 31 * 100).toFixed(2) + '%';
+      document.getElementById('p31H').style.left = x(k); document.getElementById('p31HL').textContent = dt(dy.d);
+      const trk = document.getElementById('p31Track'); trk.setAttribute('aria-valuenow', k + 1); trk.setAttribute('aria-valuetext', dt(dy.d));
+      document.getElementById('p31Sum').innerHTML = `
+        <div><span class="k">Leaving by ${dt(dy.d)}</span><b class="mono">${gbp(tot)}</b><span class="s">${k + 1} day${k ? 's' : ''} from today</span></div>
+        <div><span class="k">Regular</span><b class="mono">${gbp(ddT)}</b><span class="s">${due.length} payment${due.length === 1 ? '' : 's'} + ${gbp(sp)} spend</span></div>
+        <div><span class="k">${left == null ? 'Balance' : left < 0 ? 'Short by' : 'Left'}</span><b class="mono ${left == null ? '' : left < 0 ? 'neg' : 'pos'}">${left == null ? '–' : gbp(Math.abs(left))}</b><span class="s">${left == null ? 'type it above' : 'on average'}</span></div>`;
+      body.querySelectorAll('.p31-bar').forEach(b => b.classList.toggle('after', +b.dataset.i > k));
+      const all = M.days.flatMap(z => z.due.map(q => Object.assign({d: z.d, i: z.i}, q)));
+      document.getElementById('p31Due').innerHTML = all.map(z => `<li class="${z.i > k ? 'after' : ''}"><span class="dy">${dt(z.d)}</span><span class="nm">${esc(z.name)}</span><span class="mono">${gbp(z.amt)}</span></li>`).join('') || '<li><span class="nm">Nothing regular due in the next 31 days.</span></li>';
+    };
+    upd();
+    const tr = document.getElementById('p31Track');
+    const at = e => { const r = tr.getBoundingClientRect(); k = Math.max(0, Math.min(30, Math.floor((e.clientX - r.left) / r.width * 31))); upd(); };
+    tr.onpointerdown = e => { tr.setPointerCapture(e.pointerId); at(e); tr.onpointermove = at; };
+    tr.onpointerup = tr.onpointercancel = () => { tr.onpointermove = null; };
+    tr.onkeydown = e => { const d = {ArrowRight:1, ArrowUp:1, ArrowLeft:-1, ArrowDown:-1}[e.key]; if(!d) return; e.preventDefault(); k = Math.max(0, Math.min(30, k + d)); upd(); };
+    const keep = () => { savePrefs(); const st = cmp.scrollTop; draw(); cmp.scrollTop = st; };
+    body.querySelectorAll('[data-acct]').forEach(b => b.onclick = () => { a = R.acct = b.dataset.acct; k = null; savePrefs(); setTimeout(draw, 0); });
+    document.getElementById('p31Bal').onchange = e => { const v = e.target.value.trim(); if(v === '') delete R.bal[a]; else R.bal[a] = +v; keep(); };
+    document.getElementById('p31Wk').onchange = e => { const v = e.target.value.trim(); if(v === '') delete R.wk[a]; else R.wk[a] = +v || 0; keep(); };
+    body.querySelectorAll('[data-off]').forEach(i => i.onchange = () => { if(i.checked) delete R.off[i.dataset.off]; else R.off[i.dataset.off] = 1; keep(); });
+    body.querySelectorAll('[data-amt]').forEach(i => i.onchange = () => { R.amt[i.dataset.amt] = +i.value || 0; keep(); });
+    body.querySelectorAll('[data-an]').forEach(i => i.onchange = () => { M.adds[+i.dataset.an].n = i.value; keep(); });
+    body.querySelectorAll('[data-ad]').forEach(i => i.onchange = () => { M.adds[+i.dataset.ad].d = Math.max(1, Math.min(31, +i.value || 1)); keep(); });
+    body.querySelectorAll('[data-aa]').forEach(i => i.onchange = () => { M.adds[+i.dataset.aa].a = +i.value || 0; keep(); });
+    body.querySelectorAll('[data-ax]').forEach(b => b.onclick = () => { M.adds.splice(+b.dataset.ax, 1); setTimeout(keep, 0); });
+    document.getElementById('p31Add').onclick = () => { M.adds.push({n:'New payment', d: new Date().getDate(), a:0}); setTimeout(keep, 0); };
+  };
+  document.getElementById('cmpTitle').textContent = 'Next 31 days';
+  document.querySelector('#cmp .eyebrow').textContent = 'Santander & NatWest · before payday';
+  document.getElementById('cmpSub').textContent = 'Regular payments on their days, plus an average week of other spending.';
+  draw();
+  cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
+}
+document.getElementById('p31Btn').onclick = () => openNext31(prefs.src === 'nw' ? 'nw' : 'joint');
+
 // ── page ──
 function render(){
   if(isStm() && !NW_DATA.stmts.length) prefs.nwView = 'years';
@@ -2586,6 +2746,7 @@ function render(){
   document.querySelector('main > .bar').hidden = prefs.src === 'pay';
   document.getElementById('oneOffBtn').hidden = !flow;
   document.getElementById('royBtn').hidden = !(prefs.src === 'joint' && JTX && JTX.length);
+  document.getElementById('p31Btn').hidden = !((prefs.src === 'joint' && JTX && JTX.length) || (prefs.src === 'nw' && NW_TXNS.length));
   document.getElementById('flowView').hidden = !flow;
   document.getElementById('worthView').hidden = prefs.src !== 'worth';
   document.getElementById('assetsView').hidden = prefs.src !== 'assets';
@@ -2607,7 +2768,7 @@ function render(){
     : !usingExtra;
   const ev = document.getElementById('emptyView'); ev.hidden = !empty;
   if(empty){
-    ['flowView','payView','worthView','assetsView','yearTabs','yearsBtn','oneOffBtn','royBtn','zoomHint'].forEach(id => document.getElementById(id).hidden = true);
+    ['flowView','payView','worthView','assetsView','yearTabs','yearsBtn','oneOffBtn','royBtn','p31Btn','zoomHint'].forEach(id => document.getElementById(id).hidden = true);
     document.getElementById('legend').innerHTML = '';
     const need = {joint:'the Santander sheet (and the Joint transactions tab)', nw:'the Full Summary sheet and the NatWest transactions tab', pay:'the Full Summary sheet’s Salary block', worth:'the Full Summary sheet', assets:'the Full Summary sheet'}[prefs.src] || 'the workbook';
     ev.innerHTML = `<h2>Load your finances workbook</h2><p>Nothing is built into the app any more, so every figure comes from your “2026 finances” workbook. This tab reads ${need}.</p><p>Tap <b>Load spreadsheet</b> and pick the latest version. It stays on this phone only.</p>`;
