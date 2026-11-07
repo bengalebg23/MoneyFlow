@@ -48,6 +48,9 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.20.3 — Next 31 days: a usual payment in no longer has to be the exact same amount each month (salary
+           varies). It's each month's payment within 25% of the typical month's biggest (£500+), in 2+ of the
+           last 3 months; the amount used is the latest one.
   v1.20.2 — Next 31 days counts money in. Each payer's usual payment (£500+, same amount in 2+ of the last
            3 months) goes on its usual day as a green line; on Santander the rest of Ben's and Emily's money
            in is top-ups, net of top-up returns, as a weekly average (editable, prefs.p31.tu). Boxes are now
@@ -263,7 +266,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.20.2</title>
+<title>Money Flow v1.20.3</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -629,7 +632,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.20.2';
+const APP_VERSION = '1.20.3';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -2654,11 +2657,13 @@ function p31Model(a){
   const inG = {}, tops = [], monDays = mons.reduce((s2,m) => s2 + new Date(+m.slice(0,4), +m.slice(5,7), 0).getDate(), 0);
   for(const t of rows){ if(!mons.includes(t[0].slice(0,7)) || t[3] !== 'in') continue; (inG[t[4]] = inG[t[4]] || {item: t[4], lines: []}).lines.push(t); }
   for(const g of Object.values(inG)){
-    const freq = {}; g.lines.filter(t => t[1] >= 500).forEach(t => (freq[Math.round(t[1])] = freq[Math.round(t[1])] || new Set()).add(t[0].slice(0,7)));
-    const rec = Object.entries(freq).filter(f => f[1].size >= 2).sort((p1,q1) => q1[1].size - p1[1].size || +q1[0] - +p1[0])[0];
-    const usual = rec ? +rec[0] : null, regL = usual ? g.lines.filter(t => Math.round(t[1]) === usual) : [];
-    if(regL.length){ const dd = regL.map(t => +t[0].slice(8,10)).sort((x,y) => x - y);
-      pays.push({k: 'i›' + g.item, item: g.item, name: g.item, day: dd[Math.floor(dd.length/2)], amt: usual}); }
+    // a salary moves a little month to month, so "the same amount" means within 25% of the typical month's biggest payment
+    const big = mons.map(m => Math.max(0, ...g.lines.filter(t => t[0].slice(0,7) === m && t[1] >= 500).map(t => t[1]))).filter(v => v > 0).sort((x,y) => x - y);
+    const mid = big.length >= 2 ? big[Math.floor((big.length - 1) / 2)] : 0, regL = [];
+    if(mid) for(const m of mons){ const c = g.lines.filter(t => t[0].slice(0,7) === m && Math.abs(t[1] - mid) <= mid * 0.25).sort((x,y) => Math.abs(x[1] - mid) - Math.abs(y[1] - mid))[0]; if(c) regL.push(c); }
+    if(regL.length >= 2){ const dd = regL.map(t => +t[0].slice(8,10)).sort((x,y) => x - y);
+      pays.push({k: 'i›' + g.item, item: g.item, name: g.item, day: dd[Math.floor(dd.length/2)], amt: regL[regL.length-1][1]}); }
+    else regL.length = 0;
     if(a === 'joint' && /^(Ben|Emily)$/.test(g.item)){
       const net = Math.max(0, g.lines.filter(t => !regL.includes(t)).reduce((s2,t) => s2 + t[1], 0)), tk = a + '›' + g.item;
       tops.push({who: g.item, tk, net, avg: net / monDays * 7, use: R.tu[tk] != null ? +R.tu[tk] : Math.round(net / monDays * 7)}); }
@@ -2738,12 +2743,13 @@ function openNext31(acct){
       const sp = M.wk * (k + 1) / 7, tot = ddT + sp, bal = M.bal != null && M.bal !== '' ? +M.bal : null;
       const paidIn = M.days.slice(0, k + 1).reduce((s2,z) => s2 + z.inn.reduce((s3,q) => s3 + q.amt, 0), 0), tu = M.tuWk * (k + 1) / 7, inn = paidIn + tu;
       const left = bal != null ? bal - tot + inn : null;
+      const nextIn = M.days.slice(k + 1).find(z => z.inn.length);
       document.getElementById('p31Fill').style.width = ((k + 1) / 31 * 100).toFixed(2) + '%';
       document.getElementById('p31H').style.left = x(k); document.getElementById('p31HL').textContent = dt(dy.d);
       const trk = document.getElementById('p31Track'); trk.setAttribute('aria-valuenow', k + 1); trk.setAttribute('aria-valuetext', dt(dy.d));
       document.getElementById('p31Sum').innerHTML = `
         <div><span class="k">Leaving by ${dt(dy.d)}</span><b class="mono">${gbp(tot)}</b><span class="s">${gbp(ddT)} regular + ${gbp(sp)} spend</span></div>
-        <div><span class="k">Coming in</span><b class="mono">${gbp(inn)}</b><span class="s">${M.tops.length ? `${gbp(paidIn)} paid in + ${gbp(tu)} top-ups` : paidIn ? 'regular money in' : 'nothing due'}</span></div>
+        <div><span class="k">Coming in</span><b class="mono">${gbp(inn)}</b><span class="s">${M.tops.length ? `${gbp(paidIn)} paid in + ${gbp(tu)} top-ups` : paidIn ? 'regular money in' : nextIn ? `${esc(nextIn.inn[0].name)} lands ${dt(nextIn.d)}` : 'nothing due'}</span></div>
         <div><span class="k">${left == null ? 'Balance' : left < 0 ? 'Short by' : 'Left'}</span><b class="mono ${left == null ? '' : left < 0 ? 'neg' : 'pos'}">${left == null ? '–' : gbp(Math.abs(left))}</b><span class="s">${left == null ? 'type it above' : 'on average'}</span></div>`;
       body.querySelectorAll('.p31-bar').forEach(b => b.classList.toggle('after', +b.dataset.i > k));
       const all = M.days.flatMap(z => [...z.inn.map(q => Object.assign({d: z.d, i: z.i, isIn: true}, q)), ...z.due.map(q => Object.assign({d: z.d, i: z.i}, q))]);
