@@ -48,6 +48,10 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.20.2 — Next 31 days counts money in. Each payer's usual payment (£500+, same amount in 2+ of the last
+           3 months) goes on its usual day as a green line; on Santander the rest of Ben's and Emily's money
+           in is top-ups, net of top-up returns, as a weekly average (editable, prefs.p31.tu). Boxes are now
+           Leaving / Coming in / Left; the due list shows money in as +£. Payday = the biggest usual payment.
   v1.20.1 — Next 31 days: the average week is unpredictable spending only. Bill-type categories (P31_FIXED:
            mortgage, council tax, energy, bills, internet, nursery, savings, transfers, subscriptions, annual)
            and any item that has a regular payment are left out even when they don't land monthly; the
@@ -259,7 +263,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.20.1</title>
+<title>Money Flow v1.20.2</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -625,7 +629,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.20.1';
+const APP_VERSION = '1.20.2';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -2610,8 +2614,8 @@ document.getElementById('royBtn').onclick = () => openRestOfYear();
 // Regular payments come from the statement lines (JTX for Santander, NW_TXNS for NatWest): an outgoing
 // item seen once or twice a month in at least 2 of the last 3 complete months. Everything else is
 // "other spending": the last 8 weeks' average, leaving out the biggest week. Drag the handle to a date.
-const P31_DEF = {acct:null, off:{}, amt:{}, wk:{}, bal:{}, add:{joint:[], nw:[]}};
-const p31P = () => { if(!prefs.p31 || !prefs.p31._v) prefs.p31 = Object.assign(JSON.parse(JSON.stringify(P31_DEF)), prefs.p31 || {}, {_v:1}); return prefs.p31; };
+const P31_DEF = {acct:null, off:{}, amt:{}, wk:{}, bal:{}, add:{joint:[], nw:[]}, inOff:{}, inAmt:{}, tu:{}};
+const p31P = () => { if(!prefs.p31 || prefs.p31._v !== 2) prefs.p31 = Object.assign(JSON.parse(JSON.stringify(P31_DEF)), prefs.p31 || {}, {_v:2}); return prefs.p31; };
 const p31Lines = a => a === 'nw' ? NW_TXNS.filter(t => t[5] !== 'gap') : (JTX || []);
 // Bill-type categories never count towards the average week, whether or not they were spotted as regular.
 const P31_FIXED = new Set(['Mortgage','Mortgage overpayment','Council Tax','Energy','Bills & subs','Internet','Nursery',"Kids' savings",'Household savings','Annual payments',
@@ -2628,7 +2632,7 @@ function p31Model(a){
   const key = t => [t[3], t[4], p31Words(t[2])].join('›');
   const grp = {};
   for(const t of rows){ const m = t[0].slice(0,7); if(!mons.includes(m)) continue;
-    if(t[3] === 'Covered by joint account' || (t[3] === LOAN_BUILD[0] && t[4] === LOAN_BUILD[1])) continue;
+    if(t[3] === 'in' || t[3] === 'Covered by joint account' || (t[3] === LOAN_BUILD[0] && t[4] === LOAN_BUILD[1])) continue;
     const k = (t[1] < 0 ? 'o›' : 'i›') + key(t), g = grp[k] = grp[k] || {k, by:{}, all:[]};
     (g.by[m] = g.by[m] || []).push(t); g.all.push(t); }
   const regs = [], pays = [], regKeys = new Set(), regItems = new Set();
@@ -2638,14 +2642,31 @@ function p31Model(a){
     const per = g.all.length / hit;   // one or two a month
     const o = {k: g.k, cat: lt[3], item: lt[4], words: p31Words(lt[2]), day, amt: Math.abs(lt[1]), n: g.all.length, per, lastDate: lt[0]};
     if(per > 1.5){ const ds = [...new Set(dd)]; o.days = [ds[0], ds[ds.length-1]]; }
-    if(lt[1] < 0){ regs.push(o); regKeys.add(key(lt)); regItems.add(lt[3]+'›'+lt[4]); } else if(Math.abs(lt[1]) >= 500) pays.push(o);
+    if(lt[1] < 0){ regs.push(o); regKeys.add(key(lt)); regItems.add(lt[3]+'›'+lt[4]); }
   }
   // names: the item, plus the payee words when two regular payments share an item
   const cnt = {}; regs.forEach(r => cnt[r.item] = (cnt[r.item] || 0) + 1);
   const title = w => w.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   regs.forEach(r => { const it = r.item && r.item !== 'in' ? r.item : r.cat; r.name = cnt[r.item] > 1 && r.words ? `${it} · ${title(r.words)}` : (it || title(r.words) || 'Payment'); });
   regs.sort((x,y) => x.day - y.day || y.amt - x.amt);
+  // Money in: each payer's usual monthly payment (£500+, the same amount in 2+ of the 3 months) on its usual day.
+  // On Santander the rest of Ben's and Emily's money in is top-ups, net of any top-up returns, as a weekly average.
+  const inG = {}, tops = [], monDays = mons.reduce((s2,m) => s2 + new Date(+m.slice(0,4), +m.slice(5,7), 0).getDate(), 0);
+  for(const t of rows){ if(!mons.includes(t[0].slice(0,7)) || t[3] !== 'in') continue; (inG[t[4]] = inG[t[4]] || {item: t[4], lines: []}).lines.push(t); }
+  for(const g of Object.values(inG)){
+    const freq = {}; g.lines.filter(t => t[1] >= 500).forEach(t => (freq[Math.round(t[1])] = freq[Math.round(t[1])] || new Set()).add(t[0].slice(0,7)));
+    const rec = Object.entries(freq).filter(f => f[1].size >= 2).sort((p1,q1) => q1[1].size - p1[1].size || +q1[0] - +p1[0])[0];
+    const usual = rec ? +rec[0] : null, regL = usual ? g.lines.filter(t => Math.round(t[1]) === usual) : [];
+    if(regL.length){ const dd = regL.map(t => +t[0].slice(8,10)).sort((x,y) => x - y);
+      pays.push({k: 'i›' + g.item, item: g.item, name: g.item, day: dd[Math.floor(dd.length/2)], amt: usual}); }
+    if(a === 'joint' && /^(Ben|Emily)$/.test(g.item)){
+      const net = Math.max(0, g.lines.filter(t => !regL.includes(t)).reduce((s2,t) => s2 + t[1], 0)), tk = a + '›' + g.item;
+      tops.push({who: g.item, tk, net, avg: net / monDays * 7, use: R.tu[tk] != null ? +R.tu[tk] : Math.round(net / monDays * 7)}); }
+  }
+  tops.sort((x,y) => x.who.localeCompare(y.who));
   pays.sort((x,y) => y.amt - x.amt); const pay = pays[0] || null;
+  pays.forEach(q => Object.assign(q, {off: !!R.inOff[q.k], use: R.inAmt[q.k] != null ? +R.inAmt[q.k] : Math.round(q.amt)}));
+  const tuWk = tops.reduce((s2,q) => s2 + q.use, 0);
   // other spending: the last 8 weeks' average, leaving out the biggest week (to the last statement date)
   // Only the unpredictable stuff: the regular payments found above, anything else paid to the same payee,
   // and whole bill-type categories (P31_FIXED) are all left out, even when they don't land monthly.
@@ -2658,17 +2679,18 @@ function p31Model(a){
   const wk = R.wk[a] != null ? +R.wk[a] : Math.round(wkMid);
   // the 31 days from today
   const now = new Date(), days = [];
-  for(let i = 0; i < 31; i++){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i); days.push({i, d, dom: d.getDate(), len: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(), due: [], pay: false}); }
+  for(let i = 0; i < 31; i++){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i); days.push({i, d, dom: d.getDate(), len: new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(), due: [], inn: [], pay: false}); }
   const on = (dy, day) => dy.dom === Math.min(day, dy.len);
   const items = regs.map(r => Object.assign(r, {off: !!R.off[r.k], use: R.amt[r.k] != null ? +R.amt[r.k] : Math.round(r.amt)}));
   const adds = (R.add[a] = R.add[a] || []);
   for(const dy of days){
     for(const r of items){ if(r.off) continue; const ds = r.days || [r.day]; if(ds.some(x => on(dy, x))) dy.due.push({name: r.name, amt: r.use}); }
     adds.forEach(x => { if(+x.d && on(dy, +x.d) && +x.a) dy.due.push({name: x.n || 'Added payment', amt: +x.a, added: true}); });
+    pays.forEach(q => { if(!q.off && q.use && on(dy, q.day)) dy.inn.push({name: q.name, amt: q.use}); });
     if(pay && on(dy, pay.day)) dy.pay = true; }
   // the handle starts on the day before the next payday (or day 31)
   const pd = days.findIndex(dy => dy.pay && dy.i > 0), def = pd > 0 ? pd - 1 : 30;
-  return {a, last, mons, items, pay, wk, wkMid, wkMean, wks, wkTop, days, def, adds, bal: R.bal[a]};
+  return {a, last, mons, items, pay, pays, tops, tuWk, wk, wkMid, wkMean, wks, wkTop, days, def, adds, bal: R.bal[a]};
 }
 function openNext31(acct){
   const esc = x => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -2689,14 +2711,19 @@ function openNext31(acct){
         <div class="p31-base"></div><div class="p31-fill" id="p31Fill"></div>
         ${M.days.filter(dy => dy.d.getDay() === 1).map(dy => `<div class="p31-wk" style="left:${x(dy.i)}"></div>`).join('')}
         ${M.days.map(dy => { const v = dy.due.reduce((s,z) => s + z.amt, 0); return v ? `<div class="p31-bar" data-i="${dy.i}" style="left:${x(dy.i)};height:${(6 + 30 * Math.sqrt(v / mx)).toFixed(1)}px"></div>` : ''; }).join('')}
-        ${M.days.filter(dy => dy.pay).map(dy => `<div class="p31-pay" style="left:${x(dy.i)}"><span>Pay</span></div>`).join('')}
+        ${M.days.filter(dy => dy.inn.length || dy.pay).map((dy, n) => `<div class="p31-pay" style="left:${x(dy.i)}"><span style="top:${n % 2 ? 32 : 20}px">${esc(dy.inn.length ? dy.inn.map(z => String(z.name).split(/[\s(]/)[0]).join('/') : 'Pay')}</span></div>`).join('')}
         ${M.days.filter(dy => dy.i === 0 || dy.dom === 1 || dy.i % 7 === 0).map(dy => `<span class="p31-lbl" style="left:${x(dy.i)}">${dy.dom}${dy.i === 0 || dy.dom === 1 ? ' ' + MON_S[dy.d.getMonth()] : ''}</span>`).join('')}
         <div class="p31-h" id="p31H"><span id="p31HL"></span><b></b></div>
       </div>
-      <p class="note" style="margin:2px 2px 10px">Drag along the bar. Blue bars are regular payments; green is payday (${esc(payTxt)}). Statements run to ${lastTxt}, so anything due before today is taken as paid.</p>
-      <section class="oo-cat"><h3><i style="background:${css('--c-home')}"></i>Regular payments due</h3><ul class="p31-due" id="p31Due"></ul></section>
+      <p class="note" style="margin:2px 2px 10px">Drag along the bar. Blue bars are regular payments; green lines are money in (${esc(payTxt)}). Statements run to ${lastTxt}, so anything due before today is taken as paid.</p>
+      <section class="oo-cat"><h3><i style="background:${css('--c-home')}"></i>Due in and out</h3><ul class="p31-due" id="p31Due"></ul></section>
       <section class="oo-cat"><h3><i style="background:${css('--c-spend')}"></i>Average spend per week</h3><ul>
         <li class="p31-reg"><span class="nm">Unpredictable spending only<small>Bills, savings, transfers and the regular payments below are left out. Last 8 weeks to ${lastTxt}: ${gbp(M.wkMid)} a week leaving out the biggest week (${gbp(M.wkMean)} with it).</small><small>${M.wkTop.slice(0, 5).map(([c, v]) => `${esc(c)} ${gbp(v)}`).join(' · ') || 'Nothing else spent'}${M.wkTop.length > 5 ? ' · …' : ''}</small></span><input class="roy-num" type="number" inputmode="decimal" id="p31Wk" value="${M.wk}"></li></ul></section>
+      <section class="oo-cat"><h3><i style="background:${css('--today')}"></i>Money in</h3><ul>${M.pays.map(q => `<li class="p31-reg">
+          <label class="chk"><input type="checkbox" data-inoff="${esc(q.k)}"${q.off ? '' : ' checked'}><span class="nm">${esc(q.name)}<small>usual payment, around the ${q.day}${['th','st','nd','rd'][(q.day % 10 > 3 || [11,12,13].includes(q.day)) ? 0 : q.day % 10]}</small></span></label>
+          <input class="roy-num" type="number" inputmode="decimal" data-inamt="${esc(q.k)}" value="${q.use}"></li>`).join('')}${M.tops.map(q => `<li class="p31-reg">
+          <span class="nm">${esc(q.who)}’s top-ups per week<small>${gbp(q.net)} on top of the usual in ${M.mons.map(m => MON_S[+m.slice(5,7)-1]).join('–')}, net of top-up returns (${gbp(q.avg)} a week)</small></span>
+          <input class="roy-num" type="number" inputmode="decimal" data-tu="${esc(q.tk)}" value="${q.use}"></li>`).join('')}${M.pays.length || M.tops.length ? '' : '<li><span class="nm">No regular money in found.</span></li>'}</ul></section>
       <section class="oo-cat"><h3><i style="background:${css('--c-annual')}"></i>Regular payments found</h3>
         <p class="note" style="margin:2px 2px 6px">Seen most months in ${M.mons.map(m => MON_S[+m.slice(5,7)-1]).join(', ')}. Untick any that have stopped; amounts are the latest one.</p><ul>${M.items.map(r => `<li class="p31-reg">
           <label class="chk"><input type="checkbox" data-off="${esc(r.k)}"${r.off ? '' : ' checked'}><span class="nm">${esc(r.name)}<small>${r.days ? `twice a month, around the ${r.days[0]} and ${r.days[1]}` : `around the ${r.day}`} · last ${gbp(r.amt)}</small></span></label>
@@ -2708,17 +2735,19 @@ function openNext31(acct){
         <p style="margin:8px 2px"><button class="linkbtn" id="p31Add">+ Add a payment</button></p></section>`;
     const upd = () => {
       const dy = M.days[k], due = M.days.slice(0, k + 1).flatMap(z => z.due.map(q => Object.assign({d: z.d}, q))), ddT = due.reduce((s,z) => s + z.amt, 0);
-      const sp = M.wk * (k + 1) / 7, tot = ddT + sp, bal = M.bal != null && M.bal !== '' ? +M.bal : null, left = bal != null ? bal - tot : null;
+      const sp = M.wk * (k + 1) / 7, tot = ddT + sp, bal = M.bal != null && M.bal !== '' ? +M.bal : null;
+      const paidIn = M.days.slice(0, k + 1).reduce((s2,z) => s2 + z.inn.reduce((s3,q) => s3 + q.amt, 0), 0), tu = M.tuWk * (k + 1) / 7, inn = paidIn + tu;
+      const left = bal != null ? bal - tot + inn : null;
       document.getElementById('p31Fill').style.width = ((k + 1) / 31 * 100).toFixed(2) + '%';
       document.getElementById('p31H').style.left = x(k); document.getElementById('p31HL').textContent = dt(dy.d);
       const trk = document.getElementById('p31Track'); trk.setAttribute('aria-valuenow', k + 1); trk.setAttribute('aria-valuetext', dt(dy.d));
       document.getElementById('p31Sum').innerHTML = `
-        <div><span class="k">Leaving by ${dt(dy.d)}</span><b class="mono">${gbp(tot)}</b><span class="s">${k + 1} day${k ? 's' : ''} from today</span></div>
-        <div><span class="k">Regular</span><b class="mono">${gbp(ddT)}</b><span class="s">${due.length} payment${due.length === 1 ? '' : 's'} + ${gbp(sp)} spend</span></div>
+        <div><span class="k">Leaving by ${dt(dy.d)}</span><b class="mono">${gbp(tot)}</b><span class="s">${gbp(ddT)} regular + ${gbp(sp)} spend</span></div>
+        <div><span class="k">Coming in</span><b class="mono">${gbp(inn)}</b><span class="s">${M.tops.length ? `${gbp(paidIn)} paid in + ${gbp(tu)} top-ups` : paidIn ? 'regular money in' : 'nothing due'}</span></div>
         <div><span class="k">${left == null ? 'Balance' : left < 0 ? 'Short by' : 'Left'}</span><b class="mono ${left == null ? '' : left < 0 ? 'neg' : 'pos'}">${left == null ? '–' : gbp(Math.abs(left))}</b><span class="s">${left == null ? 'type it above' : 'on average'}</span></div>`;
       body.querySelectorAll('.p31-bar').forEach(b => b.classList.toggle('after', +b.dataset.i > k));
-      const all = M.days.flatMap(z => z.due.map(q => Object.assign({d: z.d, i: z.i}, q)));
-      document.getElementById('p31Due').innerHTML = all.map(z => `<li class="${z.i > k ? 'after' : ''}"><span class="dy">${dt(z.d)}</span><span class="nm">${esc(z.name)}</span><span class="mono">${gbp(z.amt)}</span></li>`).join('') || '<li><span class="nm">Nothing regular due in the next 31 days.</span></li>';
+      const all = M.days.flatMap(z => [...z.inn.map(q => Object.assign({d: z.d, i: z.i, isIn: true}, q)), ...z.due.map(q => Object.assign({d: z.d, i: z.i}, q))]);
+      document.getElementById('p31Due').innerHTML = all.map(z => `<li class="${z.i > k ? 'after' : ''}"><span class="dy">${dt(z.d)}</span><span class="nm">${esc(z.name)}</span><span class="mono${z.isIn ? ' pos' : ''}">${z.isIn ? '+' : ''}${gbp(z.amt)}</span></li>`).join('') || '<li><span class="nm">Nothing regular due in the next 31 days.</span></li>';
     };
     upd();
     const tr = document.getElementById('p31Track');
@@ -2732,6 +2761,9 @@ function openNext31(acct){
     document.getElementById('p31Wk').onchange = e => { const v = e.target.value.trim(); if(v === '') delete R.wk[a]; else R.wk[a] = +v || 0; keep(); };
     body.querySelectorAll('[data-off]').forEach(i => i.onchange = () => { if(i.checked) delete R.off[i.dataset.off]; else R.off[i.dataset.off] = 1; keep(); });
     body.querySelectorAll('[data-amt]').forEach(i => i.onchange = () => { R.amt[i.dataset.amt] = +i.value || 0; keep(); });
+    body.querySelectorAll('[data-inoff]').forEach(i => i.onchange = () => { if(i.checked) delete R.inOff[i.dataset.inoff]; else R.inOff[i.dataset.inoff] = 1; keep(); });
+    body.querySelectorAll('[data-inamt]').forEach(i => i.onchange = () => { R.inAmt[i.dataset.inamt] = +i.value || 0; keep(); });
+    body.querySelectorAll('[data-tu]').forEach(i => i.onchange = () => { const v = i.value.trim(); if(v === '') delete R.tu[i.dataset.tu]; else R.tu[i.dataset.tu] = +v || 0; keep(); });
     body.querySelectorAll('[data-an]').forEach(i => i.onchange = () => { M.adds[+i.dataset.an].n = i.value; keep(); });
     body.querySelectorAll('[data-ad]').forEach(i => i.onchange = () => { M.adds[+i.dataset.ad].d = Math.max(1, Math.min(31, +i.value || 1)); keep(); });
     body.querySelectorAll('[data-aa]').forEach(i => i.onchange = () => { M.adds[+i.dataset.aa].a = +i.value || 0; keep(); });
@@ -2740,7 +2772,7 @@ function openNext31(acct){
   };
   document.getElementById('cmpTitle').textContent = 'Next 31 days';
   document.querySelector('#cmp .eyebrow').textContent = 'Santander & NatWest · before payday';
-  document.getElementById('cmpSub').textContent = 'Regular payments on their days, plus an average week of other spending.';
+  document.getElementById('cmpSub').textContent = 'Regular payments and money in on their days, plus average weeks of other spending and top-ups.';
   draw();
   cmp.hidden = false; document.body.style.overflow = 'hidden'; cmp.scrollTop = 0;
 }
