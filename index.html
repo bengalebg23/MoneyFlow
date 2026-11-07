@@ -48,6 +48,9 @@
   Layer 3 = a dive into one item's own breakdown (openCompare with only=item, SUB_ITEMS).
 
   CHANGELOG
+  v1.20.4 — Next 31 days: a balance line chart above the bar (typed balance, or £0 to show the change, less
+           regular payments and average spend, plus money in and top-ups, day by day). Green above £0, red
+           below; a dot and figure follow the handle, and dragging on the chart moves the handle too.
   v1.20.3 — Next 31 days: a usual payment in no longer has to be the exact same amount each month (salary
            varies). It's each month's payment within 25% of the typical month's biggest (£500+), in 2+ of the
            last 3 months; the amount used is the latest one.
@@ -266,7 +269,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Money Flow">
-<title>Money Flow v1.20.3</title>
+<title>Money Flow v1.20.4</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -332,6 +335,12 @@
   .roy-num:disabled, .roy-txt:disabled, .roy-add select:disabled{opacity:.6;}
   .p31-acct{display:flex; gap:4px; margin:0 0 10px;}
   .p31-bal{display:grid; grid-template-columns:minmax(0,1fr) 120px; gap:8px; align-items:center; margin:0 2px 10px; font-size:13.5px;}
+  .p31-chart{position:relative; height:96px; margin:12px 4px 0; touch-action:none; cursor:pointer; user-select:none; -webkit-user-select:none;}
+  .p31-chart svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible;}
+  .p31-chart .lb{position:absolute; left:2px; font:10px 'IBM Plex Mono',monospace; color:var(--paper-dim); background:var(--bg); padding:0 3px; border-radius:3px; pointer-events:none;}
+  .p31-chart .lb.z{left:auto; right:2px;}
+  .p31-cdot{position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; background:var(--paper); border:2px solid var(--surface); pointer-events:none;}
+  .p31-cv{position:absolute; top:-2px; transform:translateX(-50%); font:600 11px 'IBM Plex Mono',monospace; white-space:nowrap; pointer-events:none;}
   .p31-track{position:relative; height:86px; margin:14px 4px 4px; touch-action:none; cursor:pointer; user-select:none; -webkit-user-select:none;}
   .p31-base{position:absolute; left:0; right:0; top:52px; height:6px; border-radius:3px; background:var(--surface-2);}
   .p31-fill{position:absolute; left:0; top:52px; height:6px; border-radius:3px; background:var(--mustard); opacity:.35;}
@@ -632,7 +641,7 @@
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const APP_VERSION = '1.20.3';
+const APP_VERSION = '1.20.4';
 const STORE_KEY = 'moneyflow.data.v1';
 const PREF_KEY = 'moneyflow.prefs.v1';
 const EXTRA_KEY = 'moneyflow.extra.v1';
@@ -2704,6 +2713,7 @@ function openNext31(acct){
   let a = acct && has[acct] ? acct : (R.acct && has[R.acct] ? R.acct : (has.joint ? 'joint' : 'nw')), k = null;
   const WD = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'], dt = d => `${WD[d.getDay()]} ${d.getDate()} ${MON_S[d.getMonth()]}`;
   const x = i => ((i + 0.5) / 31 * 100).toFixed(2) + '%';
+  let BS = [], CY0 = 0, CY1 = 1;   // projected balance per day, and the chart's value range
   const draw = () => {
     const M = p31Model(a); if(!M){ body.innerHTML = '<p class="note">No statement lines loaded for this account.</p>'; return; }
     if(k == null) k = M.def;
@@ -2712,6 +2722,28 @@ function openNext31(acct){
     body.innerHTML = `${has.joint && has.nw ? `<div class="p31-acct">${['joint','nw'].map(z => `<button class="sub-tab${z === a ? ' active' : ''}" data-acct="${z}">${NAME[z]}</button>`).join('')}</div>` : ''}
       <label class="p31-bal"><span>Balance in ${NAME[a]} now</span><input class="roy-num" type="number" inputmode="decimal" id="p31Bal" placeholder="£" value="${M.bal != null ? M.bal : ''}"></label>
       <div class="oo-sum" id="p31Sum"></div>
+      ${(() => {   // projected balance: typed balance (or £0) less what leaves, plus what comes in, day by day
+        let o = 0, n = 0; const b0 = M.bal != null && M.bal !== '' ? +M.bal : 0;
+        BS = M.days.map(dy => { o += dy.due.reduce((s2,z) => s2 + z.amt, 0) + M.wk / 7; n += dy.inn.reduce((s2,z) => s2 + z.amt, 0) + M.tuWk / 7; return b0 - o + n; });
+        const lo = Math.min(0, ...BS), hi = Math.max(0, ...BS), pad = (hi - lo) * 0.08 || 50; CY0 = lo - pad; CY1 = hi + pad;
+        const X = i => (i + 0.5) / 31 * 310, Y = v => (CY1 - v) / (CY1 - CY0) * 96, z = Y(0).toFixed(1);
+        const pts = BS.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`), line = 'M' + pts.join('L');
+        const area = `M${X(0).toFixed(1)},${z}L${pts.join('L')}L${X(30).toFixed(1)},${z}Z`;
+        return `<div class="p31-chart" id="p31Chart" aria-hidden="true">
+          <svg viewBox="0 0 310 96" preserveAspectRatio="none">
+            <defs><clipPath id="p31Up"><rect x="0" y="-10" width="310" height="${(+z + 10).toFixed(1)}"/></clipPath><clipPath id="p31Dn"><rect x="0" y="${z}" width="310" height="${(106 - z).toFixed(1)}"/></clipPath></defs>
+            <path d="${area}" fill="${css('--today')}" fill-opacity=".16" clip-path="url(#p31Up)"/>
+            <path d="${area}" fill="${css('--c-gap')}" fill-opacity=".18" clip-path="url(#p31Dn)"/>
+            <line x1="0" x2="310" y1="${z}" y2="${z}" stroke="${css('--paper-dim')}" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>
+            <path d="${line}" fill="none" stroke="${css('--today')}" stroke-width="2" vector-effect="non-scaling-stroke" clip-path="url(#p31Up)"/>
+            <path d="${line}" fill="none" stroke="${css('--c-gap')}" stroke-width="2" vector-effect="non-scaling-stroke" clip-path="url(#p31Dn)"/>
+            <line id="p31CL" x1="0" x2="0" y1="0" y2="96" stroke="${css('--paper')}" stroke-width="1" vector-effect="non-scaling-stroke"/>
+          </svg>
+          <span class="lb" style="top:${Math.max(0, Y(hi) - 7).toFixed(0)}px">${gbp(hi)}</span>
+          ${lo < 0 ? `<span class="lb" style="top:${Math.min(84, Y(lo) - 7).toFixed(0)}px">−${gbp(-lo)}</span>` : ''}
+          <span class="lb z" style="top:${(+z - 7).toFixed(0)}px">£0</span>
+          <i class="p31-cdot" id="p31CD"></i><span class="p31-cv" id="p31CV"></span>
+        </div>${M.bal == null || M.bal === '' ? '<p class="note" style="margin:2px 2px 0">Starts from £0 until you type a balance above, so it shows the change.</p>' : ''}`; })()}
       <div class="p31-track" id="p31Track" role="slider" tabindex="0" aria-label="Date to plan to" aria-valuemin="1" aria-valuemax="31">
         <div class="p31-base"></div><div class="p31-fill" id="p31Fill"></div>
         ${M.days.filter(dy => dy.d.getDay() === 1).map(dy => `<div class="p31-wk" style="left:${x(dy.i)}"></div>`).join('')}
@@ -2744,6 +2776,11 @@ function openNext31(acct){
       const paidIn = M.days.slice(0, k + 1).reduce((s2,z) => s2 + z.inn.reduce((s3,q) => s3 + q.amt, 0), 0), tu = M.tuWk * (k + 1) / 7, inn = paidIn + tu;
       const left = bal != null ? bal - tot + inn : null;
       const nextIn = M.days.slice(k + 1).find(z => z.inn.length);
+      const cv = BS[k], cy = (CY1 - cv) / (CY1 - CY0) * 100;
+      document.getElementById('p31CL').setAttribute('x1', ((k + 0.5) / 31 * 310).toFixed(1)); document.getElementById('p31CL').setAttribute('x2', ((k + 0.5) / 31 * 310).toFixed(1));
+      Object.assign(document.getElementById('p31CD').style, {left: x(k), top: cy.toFixed(1) + '%', background: cv < 0 ? css('--c-gap') : css('--today')});
+      const cvl = document.getElementById('p31CV'); cvl.style.left = `clamp(24px, ${x(k)}, calc(100% - 24px))`; cvl.style.top = Math.max(-2, cy * 0.96 - 18).toFixed(0) + 'px'; cvl.style.color = cv < 0 ? css('--c-gap') : css('--today');
+      cvl.textContent = (cv < 0 ? '−' : '') + gbp(Math.abs(cv));
       document.getElementById('p31Fill').style.width = ((k + 1) / 31 * 100).toFixed(2) + '%';
       document.getElementById('p31H').style.left = x(k); document.getElementById('p31HL').textContent = dt(dy.d);
       const trk = document.getElementById('p31Track'); trk.setAttribute('aria-valuenow', k + 1); trk.setAttribute('aria-valuetext', dt(dy.d));
@@ -2758,8 +2795,9 @@ function openNext31(acct){
     upd();
     const tr = document.getElementById('p31Track');
     const at = e => { const r = tr.getBoundingClientRect(); k = Math.max(0, Math.min(30, Math.floor((e.clientX - r.left) / r.width * 31))); upd(); };
-    tr.onpointerdown = e => { tr.setPointerCapture(e.pointerId); at(e); tr.onpointermove = at; };
-    tr.onpointerup = tr.onpointercancel = () => { tr.onpointermove = null; };
+    [tr, document.getElementById('p31Chart')].forEach(el => { if(!el) return;
+      el.onpointerdown = e => { el.setPointerCapture(e.pointerId); at(e); el.onpointermove = at; };
+      el.onpointerup = el.onpointercancel = () => { el.onpointermove = null; }; });
     tr.onkeydown = e => { const d = {ArrowRight:1, ArrowUp:1, ArrowLeft:-1, ArrowDown:-1}[e.key]; if(!d) return; e.preventDefault(); k = Math.max(0, Math.min(30, k + d)); upd(); };
     const keep = () => { savePrefs(); const st = cmp.scrollTop; draw(); cmp.scrollTop = st; };
     body.querySelectorAll('[data-acct]').forEach(b => b.onclick = () => { a = R.acct = b.dataset.acct; k = null; savePrefs(); setTimeout(draw, 0); });
